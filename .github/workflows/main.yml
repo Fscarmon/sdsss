@@ -28,6 +28,5 @@ jobs:
           NUM_EMAILS: ${{ secrets.NUM_EMAILS || '20' }}
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '10' }}
           TG: ${{ secrets.TG || '' }}
-          SOCKS: ${{ secrets.SOCKS || 'superproxy.zenrows.com:1338;vnFGC2gdL9dR:mpCKgq03icDV
-' }}
+          SOCKS: ${{ secrets.SOCKS || 'superproxy.zenrows.com:1338;vnFGC2gdL9dR:mpCKgq03icDV' }}
         run: python3 main.py
