@@ -22,12 +22,19 @@ jobs:
       - name: Install dependencies
         run: pip3 install -r requirements.txt
 
+      - name: Set up WARP # 添加 WARP 设置
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: wireguard
+          
+          
       - name: Run crawler
         env:
           EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || '' }}
-          NUM_EMAILS: ${{ secrets.NUM_EMAILS || '10' }}
+          NUM_EMAILS: ${{ secrets.NUM_EMAILS || '20' }}
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '5' }}
-          MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '10' }}
+          MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '20' }}
           TG: ${{ secrets.TG || '' }}
           SOCKS: ${{ secrets.SOCKS || '' }}
         run: python3 main.py
