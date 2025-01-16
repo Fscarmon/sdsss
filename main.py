@@ -155,6 +155,7 @@ def start_task(email_domains, num_emails):
         for _ in range(num_emails):
             id_retry = 1
             email = generate_random_email(domain)
+            email_retry_count = 0
             while email_retry_count < max_email_retries:
                 try:
                     random_headers = generate_random_headers()
@@ -259,13 +260,13 @@ def start_task(email_domains, num_emails):
                         else:
                             email_retry_count += 1
                             continue
-            except Exception as e:
-                logger.error(f"\033[7m发生异常:{e},正在重新开始任务...\033[0m")
-                time.sleep(random.uniform(0.5, 1.2))
-                email_retry_count += 1
-        if email_retry_count >= max_email_retries:
-            logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
-            continue  # 跳过此邮箱继续下一个
+                except Exception as e:
+                    logger.error(f"\033[7m发生异常:{e},正在重新开始任务...\033[0m")
+                    time.sleep(random.uniform(0.5, 1.2))
+                    email_retry_count += 1
+                if email_retry_count >= max_email_retries:
+                    logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
+                    continue  # 跳过此邮箱继续下一个
 
 if __name__ == "__main__":
     os.system("cls" if os.name == "nt" else "clear")
