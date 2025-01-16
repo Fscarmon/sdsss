@@ -24,10 +24,10 @@ jobs:
 
       - name: Run crawler
         env:
-          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || 'vps8.me' }}
+          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || '' }}
           NUM_EMAILS: ${{ secrets.NUM_EMAILS || '10' }}
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '5' }}
           MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '10' }}
           TG: ${{ secrets.TG || '' }}
-          SOCKS: ${{ secrets.SOCKS || 'https://vnFGC2gdL9dR:mpCKgq03icDV_country-dk@superproxy.zenrows.com:1338' }}
+          SOCKS: ${{ secrets.SOCKS || '' }}
         run: python3 main.py
