@@ -13,14 +13,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-     - name: Set up WARP
-       uses: fscarmen/warp-on-actions@v1.3
-       with:
-         stack: dual        # Optional. Support [ ipv4, ipv6, dual ]. Default is dual.
-         mode: wireguard    # Optional. Support [ wireguard, client ]. Default is wireguard.
- 
-     - name: Set up Python
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9' # 根据你的python版本修改
@@ -30,7 +24,7 @@ jobs:
 
       - name: Run crawler
         env:
-          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || 'cfcc.rr.nu;vps8.me' }}
+          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || '' }}
           NUM_EMAILS: ${{ secrets.NUM_EMAILS || '10' }}
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '5' }}
           MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '10' }}
