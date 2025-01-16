@@ -24,9 +24,10 @@ jobs:
 
       - name: Run crawler
         env:
-          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || 'cfcc.rr.nu' }}
-          NUM_EMAILS: ${{ secrets.NUM_EMAILS || '20' }}
-          MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '10' }}
+          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || 'cfcc.rr.nu;vps8.me' }}
+          NUM_EMAILS: ${{ secrets.NUM_EMAILS || '10' }}
+          MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '5' }}
+          MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '10' }}
           TG: ${{ secrets.TG || '' }}
           SOCKS: ${{ secrets.SOCKS || 'https://vnFGC2gdL9dR:mpCKgq03icDV@superproxy.zenrows.com:1338' }}
         run: python3 main.py
