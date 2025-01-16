@@ -29,5 +29,5 @@ jobs:
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '5' }}
           MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '10' }}
           TG: ${{ secrets.TG || '' }}
-          SOCKS: ${{ secrets.SOCKS || 'https://t.me/socks?server=38.46.219.204&port=26034&user=user&pass=5a0ee77f-f0ec-4a1d-a099-d8af210f0414' }}
+          SOCKS: ${{ secrets.SOCKS || 'https://vnFGC2gdL9dR:mpCKgq03icDV_country-dk@superproxy.zenrows.com:1338' }}
         run: python3 main.py
