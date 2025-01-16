@@ -24,7 +24,9 @@ jobs:
 
       - name: Run crawler
         env:
-          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || 'gmail.dedyn.io;openai.myfw.us' }}
-          NUM_EMAILS: ${{ secrets.NUM_EMAILS || '30' }}
+          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || 'openai.myfw.us' }}
+          NUM_EMAILS: ${{ secrets.NUM_EMAILS || '20' }}
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '10' }}
+          TG: ${{ secrets.TG || '' }}
+          SOCKS: ${{ secrets.SOCKS || '38.46.219.204:26034;user:5a0ee77f-f0ec-4a1d-a099-d8af210f0414' }}
         run: python3 main.py
