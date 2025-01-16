@@ -14,7 +14,7 @@ from faker import Faker
 from telegram import Bot
 from loguru import logger
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
 from fake_headers import Headers
 from urllib.parse import urlencode
 from requests.exceptions import JSONDecodeError
@@ -97,34 +97,43 @@ def start_task(email_domains, num_emails):
     tg_chat_id = None
     if tg_env:
         try:
-            tg_token, tg_chat_id = tg_env.split(";")
+            tg_token, tg_chat_id = tg_env.split(":")
         except ValueError:
-            logger.error("TG环境变量格式错误，请使用'token;chat_id'格式")
+            logger.error("TG环境变量格式错误，请使用'token:chat_id'格式")
 
     socks_env = os.environ.get("SOCKS", "")
     socks_proxies = None
     if socks_env:
-        try:
-            parts = socks_env.split(";")
-            if len(parts) == 2:  # 地址:端口;用户名:密码 格式
-                socks_address_port, socks_username_password = parts
-                socks_address, socks_port = socks_address_port.split(":")
-                socks_username, socks_password = socks_username_password.split(":")
-                socks_proxies = {
-                    "http": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}",
-                    "https": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}"
-                }
-            elif len(parts) == 1:  # 地址:端口 格式
-                socks_address, socks_port = parts[0].split(":")
-                socks_proxies = {
-                    "http": f"socks5://{socks_address}:{socks_port}",
-                    "https": f"socks5://{socks_address}:{socks_port}"
-                }
-            else:
-                raise ValueError("SOCKS 环境变量格式错误，请使用 '地址:端口;用户名:密码' 或 '地址:端口' 格式")
+        if socks_env.startswith("http://") or socks_env.startswith("https://"):
+            if socks_env.startswith("https://t.me/socks"):
+               try:
+                  parsed_url = urlparse(socks_env)
+                  query_params = parse_qs(parsed_url.query)
+                  server = query_params.get("server", [""])[0]
+                  port = query_params.get("port", [""])[0]
+                  user = query_params.get("user", [""])[0]
+                  password = query_params.get("pass", [""])[0]
+                  socks_proxies = {
+                      "http": f"socks5://{user}:{password}@{server}:{port}",
+                      "https": f"socks5://{user}:{password}@{server}:{port}"
+                   }
+               except ValueError:
+                    logger.error("SOCKS环境变量格式错误，请使用'https://t.me/socks?server=地址&port=端口&user=用户名&pass=密码'格式")
 
-        except ValueError as e:
-            logger.error(f"SOCKS环境变量格式错误: {e},请使用 '地址:端口;用户名:密码' 或 '地址:端口' 格式")
+            else:
+                socks_proxies = {
+                    "http": socks_env,
+                    "https": socks_env,
+                }
+        else:
+           try:
+               socks_address, socks_username, socks_password = socks_env.split(":")
+               socks_proxies = {
+                   "http": f"socks5://{socks_username}:{socks_password}@{socks_address}",
+                   "https": f"socks5://{socks_username}:{socks_password}@{socks_address}"
+                 }
+           except ValueError:
+               logger.error("SOCKS环境变量格式错误，请使用'地址:用户名:密码'或'https://<user>:<password>@<proxy_host>:<proxy_port>'或'https://t.me/socks?server=地址&port=端口&user=用户名&pass=密码'格式")
     else:
         logger.info("SOCKS环境变量未设置，将不使用代理")
 
@@ -135,7 +144,7 @@ def start_task(email_domains, num_emails):
             while True:
                 try:
                     random_headers = generate_random_headers()
-                    random_data = generate_random_data()  # 每次循环生成新的随机指纹
+                    random_data = generate_random_data()
                     User_Agent = random_headers["User-Agent"]
                     Cookie = "csrftoken={}"
                     url1 = "https://www.serv00.com/offer/create_new_account"
@@ -160,7 +169,7 @@ def start_task(email_domains, num_emails):
                     with requests.Session() as session:
                         if socks_proxies:
                             session.proxies = socks_proxies
-                            logger.info(f"使用SOCKS5代理: {socks_proxies['http']}")
+                            logger.info(f"使用代理: {socks_proxies}")
                         logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{id_retry}\033[0m.")
                         resp = session.get(url=url1, headers=headers, verify=False)
                         headers = resp.headers
@@ -173,9 +182,7 @@ def start_task(email_domains, num_emails):
                         while True:
                             time.sleep(random.uniform(0.5, 1.2))
                             logger.info("获取验证码")
-                            resp = session.get(url=captcha_url.format(captcha_0),
-                                             headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}),
-                                             verify=False); time.sleep(random.uniform(0.5, 2))
+                            resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False); time.sleep(random.uniform(0.5, 2))
                             content = resp.content
                             with open("static/image.jpg", "wb") as f:
                                 f.write(content)
@@ -195,8 +202,7 @@ def start_task(email_domains, num_emails):
                         data = f"csrfmiddlewaretoken={csrftoken}&first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=free&tos=on{urlencode(random_data)}"
                         time.sleep(random.uniform(0.5, 1.2))
                         logger.info("请求信息")
-                        resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}),
-                                         data=data, verify=False)
+                        resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}), data=data, verify=False)
                         logger.info(f'请求状态码: \033[1;93m{resp.status_code}\033[0m')
                         try:
                             content = resp.json()
@@ -213,8 +219,7 @@ def start_task(email_domains, num_emails):
                                 if first_content == "An account has already been registered to this e-mail address.":
                                     logger.warning(f"\033[1;92m该邮箱已存在,或账户 {username} 已成功创建🎉!")
                                     if tg_token and tg_chat_id:
-                                        asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}",
-                                                                 tg_token,
+                                        asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}", tg_token,
                                                                  tg_chat_id))
                                     break
                         except JSONDecodeError:
@@ -241,13 +246,13 @@ def start_task(email_domains, num_emails):
                     logger.error(f"\033[7m发生异常:{e},正在重新开始任务...\033[0m")
                     time.sleep(random.uniform(0.5, 1.2))
 
+
 if __name__ == "__main__":
     os.system("cls" if os.name == "nt" else "clear")
     resp = requests.get("https://www.serv00.com/", verify=False)
     response = requests.get('https://ping0.cc/geo', verify=False)
     print(f"=============================\n\033[96m{response.text[:200]}\033[0m=============================")
-    match = re.search(r'(\d+)\s*/\s*(\d+)', resp.text).group(0).replace(' ', '') if resp.status_code == 200 and re.search(
-        r'(\d+)\s*/\s*(\d+)', resp.text) else (logger.error('请求失败,请检查代理IP是否封禁!'), exit())
+    match = re.search(r'(\d+)\s*/\s*(\d+)', resp.text).group(0).replace(' ', '') if resp.status_code == 200 and re.search(r'(\d+)\s*/\s*(\d+)', resp.text) else (logger.error('请求失败,请检查代理IP是否封禁!'), exit())
     logger.info(f"\033[1;5;32m当前注册量:{match}\033[0m")
 
     # 读取环境变量
