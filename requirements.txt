@@ -5,11 +5,5 @@ ddddocr
 requests
 fake_headers
 python-telegram-bot
-pytz
-Faker
-loguru
-ddddocr
-requests
-fake_headers
-python-telegram-bot
+aiohttp
 PySocks
