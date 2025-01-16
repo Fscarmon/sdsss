@@ -24,7 +24,7 @@ jobs:
 
       - name: Run crawler
         env:
-          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || 'cfcc.rr.nu;vps8.me' }}
+          EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || 'vps8.me' }}
           NUM_EMAILS: ${{ secrets.NUM_EMAILS || '10' }}
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '5' }}
           MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '10' }}
