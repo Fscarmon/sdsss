@@ -18,21 +18,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.9' # 根据你的python版本修改
-
-      - name: Install apt dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openresolv
  
      - name: Install dependencies
         run: pip3 install -r requirements.txt
 
 
-      - name: Set up WARP with client
-        uses: fscarmen/warp-on-actions@v1.3
-        with:
-          stack: dual
-          mode: wireguard
+     - name: Set up WARP
+       uses: fscarmen/warp-on-actions@v1.3
+       with:
+         stack: dual        # Optional. Support [ ipv4, ipv6, dual ]. Default is dual.
+         mode: wireguard    # Optional. Support [ wireguard, client ]. Default is wireguard.
           
           
       - name: Run crawler
