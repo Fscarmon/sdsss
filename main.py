@@ -57,7 +57,7 @@ def generate_random_headers():
     }
 
 
-def generate_random_data():
+def generate_random_data(): # 将指纹生成移到这里
     screen_resolution = f"{random.choice([1280, 1366, 1440, 1600, 1920])}x{random.choice([720, 768, 900, 1080, 1200])}"
     fonts = ["Arial", "Times New Roman", "Verdana", "Helvetica", "Georgia", "Courier New"]
     webgl_info = {
@@ -97,9 +97,9 @@ def start_task(email_domains, num_emails):
     tg_chat_id = None
     if tg_env:
         try:
-            tg_token, tg_chat_id = tg_env.split(":")
+            tg_token, tg_chat_id = tg_env.split(";")
         except ValueError:
-            logger.error("TG环境变量格式错误，请使用'token:chat_id'格式")
+            logger.error("TG环境变量格式错误，请使用'token;chat_id'格式")
 
     socks_env = os.environ.get("SOCKS", "")
     socks_proxies = None
@@ -127,24 +127,38 @@ def start_task(email_domains, num_emails):
                 }
         else:
            try:
-               socks_address, socks_username, socks_password = socks_env.split(":")
-               socks_proxies = {
-                   "http": f"socks5://{socks_username}:{socks_password}@{socks_address}",
-                   "https": f"socks5://{socks_username}:{socks_password}@{socks_address}"
-                 }
+               if ";" in socks_env:
+                   socks_address, socks_credentials = socks_env.split(";")
+                   if ":" in socks_credentials:
+                       socks_username, socks_password = socks_credentials.split(":")
+                       socks_proxies = {
+                           "http": f"socks5://{socks_username}:{socks_password}@{socks_address}",
+                           "https": f"socks5://{socks_username}:{socks_password}@{socks_address}"
+                       }
+                   else:
+                       socks_proxies = {
+                           "http": f"socks5://{socks_address}",
+                           "https": f"socks5://{socks_address}"
+                       }
+               else:
+                   socks_proxies = {
+                       "http": f"socks5://{socks_env}",
+                       "https": f"socks5://{socks_env}"
+                   }
            except ValueError:
-               logger.error("SOCKS环境变量格式错误，请使用'地址:用户名:密码'或'https://<user>:<password>@<proxy_host>:<proxy_port>'或'https://t.me/socks?server=地址&port=端口&user=用户名&pass=密码'格式")
+               logger.error("SOCKS环境变量格式错误，请使用'地址:端口;用户名:密码'或'地址:端口'或'https://<user>:<password>@<proxy_host>:<proxy_port>'或'https://t.me/socks?server=地址&port=端口&user=用户名&pass=密码'格式")
     else:
         logger.info("SOCKS环境变量未设置，将不使用代理")
-
+    
     for domain in email_domains:
         for _ in range(num_emails):
             id_retry = 1
             email = generate_random_email(domain)
             while True:
                 try:
+                    # 每次循环都生成新的随机指纹
                     random_headers = generate_random_headers()
-                    random_data = generate_random_data()
+                    random_data = generate_random_data() # 生成随机指纹数据
                     User_Agent = random_headers["User-Agent"]
                     Cookie = "csrftoken={}"
                     url1 = "https://www.serv00.com/offer/create_new_account"
@@ -256,7 +270,7 @@ if __name__ == "__main__":
     logger.info(f"\033[1;5;32m当前注册量:{match}\033[0m")
 
     # 读取环境变量
-    email_domains_str = os.environ.get("EMAIL_DOMAIN", "openai.myfw.us")
+    email_domains_str = os.environ.get("EMAIL_DOMAIN", "")
     email_domains = [domain.strip() for domain in email_domains_str.split(';')]
 
     num_emails = int(os.environ.get("NUM_EMAILS", 10))
