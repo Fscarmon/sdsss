@@ -14,9 +14,8 @@ from faker import Faker
 from telegram import Bot
 from loguru import logger
 from datetime import datetime
-from urllib.parse import quote, urlparse, parse_qs
+from urllib.parse import quote, urlparse, parse_qs, urlencode
 from fake_headers import Headers
-from urllib.parse import urlencode
 from requests.exceptions import JSONDecodeError
 
 os.makedirs("static", exist_ok=True)
@@ -94,8 +93,6 @@ def parse_socks_string(socks_str):
         password = query_params.get('pass', [''])[0]
         if server and port and user and password:
            return f"socks5://{user}:{password}@{server}:{port}"
-    elif socks_str.startswith("https://"):
-        return socks_str
     return socks_str
 
 
@@ -121,26 +118,28 @@ def start_task(email_domains, num_emails):
                     "http": socks_str,
                     "https": socks_str
                  }
+            elif socks_str.startswith("https://"):
+                 # Use regex to extract user, password, host and port
+                match = re.match(r'https://(?:([^:]+):([^@]+)@)?([^:]+):(\d+)', socks_str)
+                if match:
+                   user, password, host, port = match.groups()
+                   if user and password:
+                       socks_proxies = {
+                        "http": f"https://{user}:{password}@{host}:{port}",
+                        "https": f"https://{user}:{password}@{host}:{port}"
+                         }
+                   else:
+                      socks_proxies = {
+                        "http": f"https://{host}:{port}",
+                        "https": f"https://{host}:{port}"
+                       }
+                else:
+                    socks_proxies = {
+                        "http": socks_str,
+                        "https": socks_str
+                   }
             else:
-                 parts = socks_str.split(":")
-                 if len(parts) == 2:
-                   socks_address, socks_port = parts
-                   socks_proxies = {
-                      "http": f"https://{socks_address}:{socks_port}",
-                       "https": f"https://{socks_address}:{socks_port}"
-                   }
-                 elif len(parts) == 4:
-                   socks_address, socks_port, socks_username, socks_password = parts
-                   socks_proxies = {
-                      "http": f"https://{socks_username}:{socks_password}@{socks_address}:{socks_port}",
-                      "https": f"https://{socks_username}:{socks_password}@{socks_address}:{socks_port}"
-                    }
-
-                 else:
-                   socks_proxies = {
-                      "http": socks_str,
-                      "https": socks_str
-                   }
+                logger.warning("SOCKS 环境变量格式不正确，请检查")
         except ValueError as e:
              logger.error(f"SOCKS 环境变量格式错误: {e}")
     else:
