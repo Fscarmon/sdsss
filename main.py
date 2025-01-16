@@ -14,14 +14,13 @@ from faker import Faker
 from telegram import Bot
 from loguru import logger
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
 from fake_headers import Headers
 from urllib.parse import urlencode
 from requests.exceptions import JSONDecodeError
 
 os.makedirs("static", exist_ok=True)
 config_file = 'static/config.json'
-
 
 def get_user_name():
     url = "https://www.ivtool.com/random-name-generater/uinames/api/index.php?region=united%20states&gender=male&amount=5&="
@@ -32,20 +31,17 @@ def get_user_name():
     data = resp.json()
     return data
 
-
 def generate_random_username():
     length = random.randint(7, 10)
     characters = string.ascii_letters
     random_string = ''.join(random.choice(characters) for _ in range(length))
     return random_string
 
-
 def generate_random_email(domain):
     length = random.randint(7, 10)
     characters = string.ascii_lowercase + string.digits
     username = ''.join(random.choice(characters) for _ in range(length))
     return f"{username}@{domain}"
-
 
 def generate_random_headers():
     return {
@@ -55,7 +51,6 @@ def generate_random_headers():
         "X-Network-Type": random.choice(["Wi-Fi", "4G", "5G"]),
         "X-Timezone": random.choice(pytz.all_timezones)
     }
-
 
 def generate_random_data():
     screen_resolution = f"{random.choice([1280, 1366, 1440, 1600, 1920])}x{random.choice([720, 768, 900, 1080, 1200])}"
@@ -81,7 +76,6 @@ def generate_random_data():
         "plugins": random.sample(["Chrome PDF Viewer", "Google Docs Offline", "AdBlock", "Grammarly", "LastPass"], k=random.randint(2, 5))
     }
 
-
 async def send_message(message, tg_token, tg_chat_id):
     try:
         bot = Bot(token=tg_token)
@@ -90,32 +84,71 @@ async def send_message(message, tg_token, tg_chat_id):
         logger.error(f"发送失败: {e}")
 
 
+def parse_socks_string(socks_str):
+    if socks_str.startswith("https://t.me/socks?"):
+        parsed_url = urlparse(socks_str)
+        query_params = parse_qs(parsed_url.query)
+        server = query_params.get('server', [''])[0]
+        port = query_params.get('port', [''])[0]
+        user = query_params.get('user', [''])[0]
+        password = query_params.get('pass', [''])[0]
+        if server and port and user and password:
+           return f"{server}:{port}:{user}:{password}"
+    elif socks_str.startswith("https://"):
+        parsed_url = urlparse(socks_str)
+        username = parsed_url.username or ""
+        password = parsed_url.password or ""
+        return f"{parsed_url.hostname}:{parsed_url.port}:{username}:{password}"
+    return socks_str
+
+
 def start_task(email_domains, num_emails):
-    max_captcha_retries = int(os.environ.get("MAX_CAPTCHA_RETRIES", 5)) # 设置验证码重试次数为5
-    max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10)) # 设置邮箱全局重试次数为10
+    max_captcha_retries = int(os.environ.get("MAX_CAPTCHA_RETRIES", 5))
+    max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10))
     tg_env = os.environ.get("TG", "")
     tg_token = None
     tg_chat_id = None
     if tg_env:
         try:
-            tg_token, tg_chat_id = tg_env.split(":")
+            tg_token, tg_chat_id = tg_env.split(";")
         except ValueError:
-            logger.error("TG环境变量格式错误，请使用'token:chat_id'格式")
+            logger.error("TG环境变量格式错误，请使用'token;chat_id'格式")
 
     socks_env = os.environ.get("SOCKS", "")
     socks_proxies = None
     if socks_env:
+        socks_str = parse_socks_string(socks_env)
         try:
-            socks_address, socks_username, socks_password = socks_env.split(":")
-            socks_proxies = {
-                "http": f"socks5://{socks_username}:{socks_password}@{socks_address}",
-                "https": f"socks5://{socks_username}:{socks_password}@{socks_address}"
-            }
-        except ValueError:
-            logger.error("SOCKS环境变量格式错误，请使用'地址:用户名:密码'格式")
-    else:
-        logger.info("SOCKS环境变量未设置，将不使用代理")
+           parts = socks_str.split(";")
+           if len(parts) == 2:
+             socks_address_port, socks_username_password = parts
+             socks_address, socks_port = socks_address_port.split(":")
+             socks_username, socks_password = socks_username_password.split(":")
+             socks_proxies = {
+                "http": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}",
+                 "https": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}"
+             }
+           else:
+            parts = socks_str.split(":")
+            if len(parts) == 2:
+                socks_address, socks_port = parts
+                socks_proxies = {
+                    "http": f"socks5://{socks_address}:{socks_port}",
+                    "https": f"socks5://{socks_address}:{socks_port}"
+                }
+            elif len(parts) == 4:
+              socks_address, socks_port, socks_username, socks_password = parts
+              socks_proxies = {
+                  "http": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}",
+                  "https": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}"
+              }
+            else:
+               raise ValueError("SOCKS 环境变量格式错误，请使用'address:port' 或 'address:port:username:password' 或'address:port;username:password' 格式，或者使用 https://t.me/socks? 或 https://username:password@address:port 格式")
 
+        except ValueError as e:
+             logger.error(f"SOCKS 环境变量格式错误: {e}")
+    else:
+        logger.info("SOCKS 环境变量未设置，将不使用代理")
     for domain in email_domains:
       for _ in range(num_emails):
         email_retry_count = 0
@@ -202,7 +235,7 @@ def start_task(email_domains, num_emails):
                                 logger.warning(f"\033[1;92m该邮箱已存在,或账户 {username} 已成功创建🎉!")
                                 if tg_token and tg_chat_id:
                                   asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}", tg_token,
-                                                           tg_chat_id))
+                                                            tg_chat_id))
                                 break #邮箱存在，则跳出全局尝试
                     except JSONDecodeError:
                         logger.error("\033[7m获取信息错误,正在重试...\033[0m")
@@ -217,7 +250,7 @@ def start_task(email_domains, num_emails):
                         email_retry_count += 1
                         logger.error("\033[7m系统维护中,正在重试...\033[0m")
                         time.sleep(random.uniform(0.5, 1.2))
-                        continue
+                        break
                     if content.get("email") and content["email"][0] == "Enter a valid email address.":
                         logger.error("\033[7m无效的邮箱,请重新输入.\033[0m")
                         time.sleep(random.uniform(0.5, 1.2))
@@ -243,7 +276,7 @@ if __name__ == "__main__":
     logger.info(f"\033[1;5;32m当前注册量:{match}\033[0m")
 
     # 读取环境变量
-    email_domains_str = os.environ.get("EMAIL_DOMAIN", "openai.myfw.us")
+    email_domains_str = os.environ.get("EMAIL_DOMAIN", "")
     email_domains = [domain.strip() for domain in email_domains_str.split(';')]
 
     num_emails = int(os.environ.get("NUM_EMAILS", 10))
