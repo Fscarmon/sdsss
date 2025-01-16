@@ -99,7 +99,6 @@ def parse_socks_string(socks_str):
     return socks_str
 
 
-
 def start_task(email_domains, num_emails):
     max_captcha_retries = int(os.environ.get("MAX_CAPTCHA_RETRIES", 5))
     max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10))
@@ -117,35 +116,31 @@ def start_task(email_domains, num_emails):
     if socks_env:
         socks_str = parse_socks_string(socks_env)
         try:
-            parts = socks_str.split(";")
-            if len(parts) == 2:
-                socks_address_port, socks_username_password = parts
-                socks_address, socks_port = socks_address_port.split(":")
-                socks_username, socks_password = socks_username_password.split(":")
-                socks_proxies = {
-                    "http": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}",
-                    "https": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}"
-                }
+            if socks_str.startswith("socks5://"):
+                 socks_proxies = {
+                    "http": socks_str,
+                    "https": socks_str
+                 }
             else:
-                parts = socks_str.split(":")
-                if len(parts) == 2:
-                    socks_address, socks_port = parts
-                    socks_proxies = {
-                        "http": f"socks5://{socks_address}:{socks_port}",
-                        "https": f"socks5://{socks_address}:{socks_port}"
-                    }
-                elif len(parts) == 4:
+                 parts = socks_str.split(":")
+                 if len(parts) == 2:
+                   socks_address, socks_port = parts
+                   socks_proxies = {
+                      "http": f"https://{socks_address}:{socks_port}",
+                       "https": f"https://{socks_address}:{socks_port}"
+                   }
+                 elif len(parts) == 4:
                    socks_address, socks_port, socks_username, socks_password = parts
                    socks_proxies = {
-                      "http": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}",
-                      "https": f"socks5://{socks_username}:{socks_password}@{socks_address}:{socks_port}"
+                      "http": f"https://{socks_username}:{socks_password}@{socks_address}:{socks_port}",
+                      "https": f"https://{socks_username}:{socks_password}@{socks_address}:{socks_port}"
                     }
-                else:
-                  #尝试直接使用socks字符串
+
+                 else:
                    socks_proxies = {
-                       "http": f"socks5://{socks_str}",
-                       "https": f"socks5://{socks_str}"
-                    }
+                      "http": socks_str,
+                      "https": socks_str
+                   }
         except ValueError as e:
              logger.error(f"SOCKS 环境变量格式错误: {e}")
     else:
