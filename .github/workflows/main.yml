@@ -13,7 +13,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+        
+      - name: Set up WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual        # Optional. Support [ ipv4, ipv6, dual ]. Default is dual.
+          mode: wireguard    # Optional. Support [ wireguard, client ]. Default is wireguard.
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -29,5 +35,5 @@ jobs:
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '5' }}
           MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '10' }}
           TG: ${{ secrets.TG || '' }}
-          SOCKS: ${{ secrets.SOCKS || 'https://vnFGC2gdL9dR:mpCKgq03icDV_country-dk@superproxy.zenrows.com:1338' }}
+          SOCKS: ${{ secrets.SOCKS || '' }}
         run: python3 main.py
