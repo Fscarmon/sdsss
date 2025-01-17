@@ -139,9 +139,9 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                 captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
                 captcha_retry = 1
                 while True:
-                    time.sleep(random.uniform(0.5, 1.2))
+                    time.sleep(random.uniform(2, 6))
                     logger.info("获取验证码")
-                    resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False); time.sleep(random.uniform(3, 10))
+                    resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False); time.sleep(random.uniform(0.5, 2))
                     content = resp.content
                     with open("static/image.jpg", "wb") as f:
                         f.write(content)
@@ -262,7 +262,7 @@ def start_task(email_domains, num_emails):
     else:
         logger.info("SOCKS 环境变量未设置，将不使用代理")
 
-    with ThreadPoolExecutor(max_workers=30) as executor:
+    with ThreadPoolExecutor(max_workers=100) as executor:
         futures = []
         for domain in email_domains:
             for _ in range(num_emails):
