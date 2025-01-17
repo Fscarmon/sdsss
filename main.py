@@ -96,6 +96,7 @@ def parse_socks_string(socks_str):
            return f"socks5://{user}:{password}@{server}:{port}"
     return socks_str
 
+
 def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_chat_id, socks_proxies):
     email_retry_count = 0
     while email_retry_count < max_email_retries:
@@ -127,7 +128,7 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                 if socks_proxies:
                     session.proxies = socks_proxies
                     logger.info(f"使用代理: {socks_proxies['http']}")
-
+                
                 logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
                 resp = session.get(url=url1, headers=headers, verify=False)
                 headers = resp.headers
@@ -211,6 +212,7 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
             logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
             return  # 跳过此邮箱继续下一个
 
+
 def start_task(email_domains, num_emails):
     max_captcha_retries = int(os.environ.get("MAX_CAPTCHA_RETRIES", 5))
     max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10))
@@ -260,32 +262,18 @@ def start_task(email_domains, num_emails):
     else:
         logger.info("SOCKS 环境变量未设置，将不使用代理")
 
-
-    # 1. 生成邮箱列表
-    all_emails = []
-    for domain in email_domains:
-        for _ in range(num_emails):
-             all_emails.append(generate_random_email(domain))
-
-    # 随机打乱邮箱顺序
-    random.shuffle(all_emails)
-
-    max_workers = 50
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
         futures = []
-        # 2. 循环处理邮箱列表
-        while all_emails:
-            # 3. 随机选取邮箱
-            email = all_emails.pop()
-
-            # 创建线程任务
-            future = executor.submit(process_email, email, max_captcha_retries, max_email_retries, tg_token, tg_chat_id, socks_proxies)
-            futures.append(future)
-        
-        # 等待所有任务完成
+        for domain in email_domains:
+            for _ in range(num_emails):
+                email = generate_random_email(domain)
+                future = executor.submit(process_email, email, max_captcha_retries, max_email_retries, tg_token, tg_chat_id, socks_proxies)
+                futures.append(future)
         for future in futures:
-            future.result()
+             future.result()
             
+
+
 if __name__ == "__main__":
     os.system("cls" if os.name == "nt" else "clear")
     resp = requests.get("https://www.serv00.com/", verify=False)
