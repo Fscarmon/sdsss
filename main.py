@@ -262,7 +262,7 @@ def start_task(email_domains, num_emails):
     else:
         logger.info("SOCKS 环境变量未设置，将不使用代理")
 
-    with ThreadPoolExecutor(max_workers=100) as executor:
+    with ThreadPoolExecutor(max_workers=30) as executor:
         futures = []
         for domain in email_domains:
             for _ in range(num_emails):
