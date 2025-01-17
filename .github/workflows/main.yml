@@ -25,7 +25,7 @@ jobs:
       - name: Run crawler
         env:
           EMAIL_DOMAIN: ${{ secrets.EMAIL_DOMAIN || '' }}
-          NUM_EMAILS: ${{ secrets.NUM_EMAILS || '30' }}
+          NUM_EMAILS: ${{ secrets.NUM_EMAILS || '50' }}
           MAX_CAPTCHA_RETRIES: ${{ secrets.MAX_CAPTCHA_RETRIES || '5' }}
           MAX_EMAIL_RETRIES: ${{ secrets.MAX_EMAIL_RETRIES || '20' }}
           TG: ${{ secrets.TG || '' }}
