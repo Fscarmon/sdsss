@@ -131,9 +131,9 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                     logger.info(f"使用代理: {socks_proxies['http']}")
                 
                 logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
-                resp1 = session.get(url=url2, headers=headers, verify=False)
-                headers1 = resp1.headers
-                content1 = resp1.text
+                resp = session.get(url=url2, headers=headers, verify=False)
+                headers = resp.headers
+                content = resp.text
                 csrftoken = re.findall(r"csrftoken=(\w+);", headers1.get("set-cookie"))[0]
                 resp = session.get(url=url1, headers=headers, verify=False)
                 headers = resp.headers
