@@ -100,7 +100,7 @@ def start_task(email_domains, num_emails):
                   url3 = "https://www.serv00.com/offer/create_new_account.json"
                   header3 = {
                       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                      "Referer": "https://www.serv00.com/offer/create_new_account",
+                      "Referer": "https://wpww.serv00.com/offer/create_new_account",
                       "Cookie": Cookie,
                       "User-Agent": User_Agent,
                       **random_headers
@@ -115,12 +115,30 @@ def start_task(email_domains, num_emails):
                   with requests.Session() as session:
                       logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{id_retry}\033[0m.")
                       resp = session.get(url=url1, headers=headers, verify=False)
+                      if resp.status_code != 200:
+                            logger.error(f"请求失败，状态码: {resp.status_code},跳过当前邮箱")
+                            continue
                       headers = resp.headers
                       content = resp.text
-                      csrftoken = re.findall(r"aisMKqh0wUIzvJ9RBRt1EfHrsEeHKddP", headers.get("set-cookie"))[0]
+                      #  自动获取 csrftoken
+                      set_cookie = headers.get("set-cookie")
+                      if not set_cookie:
+                        logger.error("没有找到 Set-Cookie 头部，跳过当前邮箱。")
+                        continue
+                      try:
+                           csrftoken = re.findall(r"csrftoken=(\w+);", set_cookie)[0]
+                      except Exception as e:
+                           logger.error(f"提取 csrftoken 失败: {e}, set_cookie: {set_cookie}")
+                           continue # 如果获取失败，跳过当前循环，尝试下一个邮箱
                       header2["Cookie"] = header2["Cookie"].format(csrftoken)
                       header3["Cookie"] = header3["Cookie"].format(csrftoken)
-                      captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
+                      
+                      try:
+                          captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
+                      except Exception as e:
+                          logger.error(f"提取 captcha_0 失败: {e}")
+                          continue
+
                       captcha_retry = 1
                       while True:
                           time.sleep(random.uniform(0.5, 1.2))
@@ -192,10 +210,9 @@ if __name__ == "__main__":
     match = re.search(r'(\d+)\s*/\s*(\d+)', resp.text).group(0).replace(' ', '') if resp.status_code == 200 and re.search(r'(\d+)\s*/\s*(\d+)', resp.text) else (logger.error('请求失败,请检查代理IP是否封禁!'), exit())
     logger.info(f"\033[1;5;32m当前注册量:{match}\033[0m")
 
-    # 读取环境变量
-    email_domains_str = os.environ.get("EMAIL_DOMAIN", "openai.myfw.us")
+    # 手动输入邮箱域名和注册数量
+    email_domains_str = input("请输入邮箱域名（多个域名请用分号 ; 分隔）: ")
     email_domains = [domain.strip() for domain in email_domains_str.split(';')]
-
-    num_emails = int(os.environ.get("NUM_EMAILS", 10))
-
+    num_emails = int(input("请输入每个域名需要注册的邮箱数量: "))
+   
     start_task(email_domains, num_emails)
