@@ -131,39 +131,11 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                 
                 logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
                 resp = session.get(url=url1, headers=headers, verify=False)
-                logger.debug(f"Headers: {resp.request.headers}")
                 headers = resp.headers
                 content = resp.text
-                
-                csrftoken = None
-                # 尝试从Set-Cookie头中提取 csrftoken
-                if 'set-cookie' in headers:
-                    set_cookie_header = headers.get('set-cookie')
-                    if set_cookie_header:
-                        match = re.search(r"csrftoken=(\w+);", set_cookie_header)
-                        if match:
-                            csrftoken = match.group(1)
-                            
-                # 如果没有在Set-Cookie中找到，尝试从网页内容中提取
-                if not csrftoken:
-                   match = re.search(r"csrftoken' value='(\w+)'", content)
-                   if match:
-                      csrftoken = match.group(1)
-
-                if not csrftoken:
-                   match = re.search(r'name="csrfmiddlewaretoken" value="(\w+)"', content)
-                   if match:
-                      csrftoken = match.group(1)
-                
-                if not csrftoken:
-                    logger.error("无法获取csrftoken")
-                    email_retry_count += 1
-                    continue
-                
+                csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
                 header2["Cookie"] = header2["Cookie"].format(csrftoken)
                 header3["Cookie"] = header3["Cookie"].format(csrftoken)
-                
-                
                 captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
                 captcha_retry = 1
                 while True:
@@ -192,7 +164,6 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                 time.sleep(random.uniform(0.5, 1.2))
                 logger.info("请求信息")
                 resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}), data=data, verify=False)
-                logger.debug(f"Headers: {resp.request.headers}")
                 logger.info(f'请求状态码: \033[1;93m{resp.status_code}\033[0m')
                 try:
                     content = resp.json()
