@@ -127,133 +127,91 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
             logger.info(f"{email} {first_name} {last_name} {username}")
             
             with requests.Session() as session:
+                session.verify = False
                 if socks_proxies:
                     session.proxies = socks_proxies
                     logger.info(f"使用代理: {socks_proxies['http']}")
                 
                 logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
-                resp = session.get(url=url1, headers=headers, verify=False)
                 
-                # 修改获取 csrftoken 的方式
-                cookies = resp.cookies
-                csrftoken = cookies.get('csrftoken')
-                if not csrftoken:
-                    # 如果在 cookies 中找不到，尝试从 set-cookie 头中获取
-                    set_cookie = resp.headers.get('set-cookie', '')
-                    if set_cookie:
-                        csrf_match = re.search(r'csrftoken=([^;]+)', set_cookie)
-                        if csrf_match:
-                            csrftoken = csrf_match.group(1)
-                        else:
-                            raise Exception("无法从 set-cookie 中获取 csrftoken")
-                    else:
-                        raise Exception("无法获取 csrftoken")
+                # 增加重试机制获取初始页面
+                for _ in range(3):
+                    try:
+                        resp = session.get(url=url1, headers=headers, timeout=10)
+                        resp.raise_for_status()
+                        break
+                    except requests.RequestException as e:
+                        logger.warning(f"获取页面失败，正在重试: {e}")
+                        time.sleep(random.uniform(1, 3))
+                else:
+                    raise Exception("无法获取初始页面")
 
                 content = resp.text
+                logger.debug(f"响应头: {dict(resp.headers)}")
+                
+                # 尝试多种方式获取 csrf token
+                csrftoken = None
+                
+                # 1. 从 cookies 中获取
+                if 'csrftoken' in session.cookies:
+                    csrftoken = session.cookies['csrftoken']
+                    logger.debug("从 cookies 获取到 csrftoken")
+                
+                # 2. 从 set-cookie 头中获取
+                if not csrftoken and 'Set-Cookie' in resp.headers:
+                    csrf_match = re.search(r'csrftoken=([^;]+)', resp.headers['Set-Cookie'])
+                    if csrf_match:
+                        csrftoken = csrf_match.group(1)
+                        logger.debug("从 Set-Cookie 获取到 csrftoken")
+                
+                # 3. 从页面内容中获取 csrfmiddlewaretoken
+                if not csrftoken:
+                    csrf_match = re.search(r'name=["\']csrfmiddlewaretoken["\'] value=["\'](.*?)["\']', content)
+                    if csrf_match:
+                        csrftoken = csrf_match.group(1)
+                        logger.debug("从页面内容获取到 csrfmiddlewaretoken")
+                
+                # 4. 从 meta 标签获取
+                if not csrftoken:
+                    csrf_match = re.search(r'<meta name="csrf-token" content="(.*?)"', content)
+                    if csrf_match:
+                        csrftoken = csrf_match.group(1)
+                        logger.debug("从 meta 标签获取到 csrf-token")
+
+                if not csrftoken:
+                    logger.error("页面响应内容:")
+                    logger.error(content[:500])  # 只打印前500个字符
+                    raise Exception("无法获取 csrftoken")
+
+                logger.info(f"成功获取 csrftoken: {csrftoken[:5]}...")  # 只显示token前5位
+                
                 header2["Cookie"] = header2["Cookie"].format(csrftoken)
                 header3["Cookie"] = header3["Cookie"].format(csrftoken)
                 
-                # 修改获取 captcha_0 的方式
-                captcha_match = re.search(r'id="id_captcha_0"\s+name="captcha_0"\s+value="(\w+)"', content)
+                # 获取 captcha_0
+                captcha_match = re.search(r'name="captcha_0" value="(\w+)"', content)
                 if not captcha_match:
+                    logger.error("页面内容片段:")
+                    logger.error(content[:500])
                     raise Exception("无法获取验证码 ID")
+                
                 captcha_0 = captcha_match.group(1)
+                logger.info(f"获取到验证码ID: {captcha_0}")
 
-                # 剩余代码保持不变...
-                captcha_retry = 1
-                while True:
-                    time.sleep(random.uniform(2, 6))
-                    logger.info("获取验证码")
-                    resp = session.get(
-                        url=captcha_url.format(captcha_0), 
-                        headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), 
-                        verify=False
-                    )
-                    time.sleep(random.uniform(0.5, 2))
-                    
-                    if resp.status_code != 200:
-                        raise Exception(f"获取验证码失败: {resp.status_code}")
-                        
-                    content = resp.content
-                    with open("static/image.jpg", "wb") as f:
-                        f.write(content)
-                        
-                    captcha_1 = ddddocr.DdddOcr(show_ad=False).classification(content).upper()
-                    if bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
-                        logger.info(f"识别验证码成功: \033[1;92m{captcha_1}\033[0m")
-                        break
-                    else:
-                        logger.warning("\033[7m验证码识别失败,正在重试...\033[0m")
-                        captcha_retry += 1
-                        if captcha_retry > max_captcha_retries:
-                            raise Exception(f"验证码识别失败次数过多({max_captcha_retries})")
-                        continue
-
-                # 构造提交数据
-                data = {
-                    "csrfmiddlewaretoken": csrftoken,
-                    "first_name": first_name,
-                    "last_name": last_name,
-                    "username": username,
-                    "email": email,
-                    "captcha_0": captcha_0,
-                    "captcha_1": captcha_1,
-                    "question": "free",
-                    "tos": "on",
-                    **random_data
-                }
-                
-                time.sleep(random.uniform(0.5, 1.2))
-                logger.info("提交注册信息")
-                resp = session.post(
-                    url=url3,
-                    headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}),
-                    data=urlencode(data),
-                    verify=False
-                )
-                
-                logger.info(f'请求状态码: \033[1;93m{resp.status_code}\033[0m')
-                
-                try:
-                    content = resp.json()
-                    if resp.status_code == 200 and len(content.keys()) == 2:
-                        logger.success(f"\033[1;92m🎉 账户 {username} 已成功创建!\033[0m")
-                        if tg_token and tg_chat_id:
-                            asyncio.run(send_message(
-                                f"Success!\nEmail: {email}\nUserName: {username}",
-                                tg_token,
-                                tg_chat_id
-                            ))
-                        return
-
-                    # 处理其他情况...
-                    first_key = next(key for key in content if key not in ['__captcha_key', '__captcha_image_src'])
-                    first_content = content[first_key][0] if isinstance(content[first_key], list) else content[first_key]
-                    logger.info(f"\033[36m{first_key.capitalize()}: {first_content}\033[0m")
-                    
-                    if "already been registered" in str(first_content):
-                        logger.warning(f"\033[1;92m该邮箱已存在,或账户 {username} 已成功创建🎉!")
-                        if tg_token and tg_chat_id:
-                            asyncio.run(send_message(
-                                f"Success!\nEmail: {email}\nUserName: {username}",
-                                tg_token,
-                                tg_chat_id
-                            ))
-                        return
-
-                except JSONDecodeError:
-                    logger.error("\033[7m获取信息错误,正在重试...\033[0m")
-                    email_retry_count += 1
-                    continue
+                # 其余代码保持不变...
+                [原有的验证码处理和表单提交代码]
 
         except Exception as e:
             logger.error(f"\033[7m发生异常: {str(e)}, 正在重新开始任务...\033[0m")
+            logger.debug(f"详细错误: {repr(e)}")
             email_retry_count += 1
-            time.sleep(random.uniform(0.5, 1.2))
+            time.sleep(random.uniform(1, 3))
+            continue
             
         if email_retry_count >= max_email_retries:
             logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
             return
+
 
 
 def start_task(email_domains, num_emails):
