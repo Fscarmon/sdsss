@@ -18,6 +18,7 @@ from urllib.parse import quote, urlparse, parse_qs, urlencode
 from fake_headers import Headers
 from requests.exceptions import JSONDecodeError
 from concurrent.futures import ThreadPoolExecutor
+from http.cookies import SimpleCookie
 
 os.makedirs("static", exist_ok=True)
 config_file = 'static/config.json'
@@ -96,6 +97,23 @@ def parse_socks_string(socks_str):
            return f"socks5://{user}:{password}@{server}:{port}"
     return socks_str
 
+def get_csrftoken_from_website(session, url, headers, socks_proxies):
+    try:
+        logger.info("获取网站cookie,提取csrf token")
+        resp = session.get(url, headers=headers, verify=False, proxies=socks_proxies if socks_proxies else None)
+        resp.raise_for_status()  # 确保请求成功
+        if 'set-cookie' in resp.headers:
+            cookies = SimpleCookie()
+            cookies.load(resp.headers.get('set-cookie'))
+            csrftoken = cookies.get('csrftoken')
+            if csrftoken:
+               return csrftoken.value
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"获取csrftoken 失败: {e}")
+        return None
+
+
 
 def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_chat_id, socks_proxies):
     email_retry_count = 0
@@ -106,7 +124,6 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
             User_Agent = random_headers["User-Agent"]
             Cookie = "csrftoken={}"
             url1 = "https://www.serv00.com/offer/create_new_account"
-            url2 = "https://www.serv00.com/"
             headers = {"User-Agent": User_Agent, **random_headers}
             captcha_url = "https://www.serv00.com/captcha/image/{}/"
             header2 = {"Cookie": Cookie, "User-Agent": User_Agent, **random_headers}
@@ -125,47 +142,24 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
             last_name = _["surname"]
             username = generate_random_username().lower()
             print(""), logger.info(f"{email} {first_name} {last_name} {username}")
+
             with requests.Session() as session:
                 if socks_proxies:
                     session.proxies = socks_proxies
                     logger.info(f"使用代理: {socks_proxies['http']}")
-                
-                logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
-                resp = session.get(url=url1, headers=headers, verify=False)
-                res = session.get(url=url2, headers=headers, verify=False)
-                logger.debug(f"Headers: {resp.request.headers}")
-                headers = res.headers
-                content = resp.text
-                
-                csrftoken = None
-                # 尝试从Set-Cookie头中提取 csrftoken
-                if 'set-cookie' in headers:
-                    set_cookie_header = headers.get('set-cookie')
-                    if set_cookie_header:
-                        match = re.search(r"csrftoken=(\w+);", set_cookie_header)
-                        if match:
-                            csrftoken = match.group(1)
-                            
-                # 如果没有在Set-Cookie中找到，尝试从网页内容中提取
-                if not csrftoken:
-                   match = re.search(r"csrftoken' value='(\w+)'", content)
-                   if match:
-                      csrftoken = match.group(1)
 
+                csrftoken = get_csrftoken_from_website(session, url1, headers, socks_proxies)
                 if not csrftoken:
-                   match = re.search(r'name="csrfmiddlewaretoken" value="(\w+)"', content)
-                   if match:
-                      csrftoken = match.group(1)
-                
-                if not csrftoken:
-                    logger.error("无法获取csrftoken")
-                    email_retry_count += 1
-                    continue
-                
+                   email_retry_count+=1
+                   continue
+
                 header2["Cookie"] = header2["Cookie"].format(csrftoken)
                 header3["Cookie"] = header3["Cookie"].format(csrftoken)
                 
                 
+                logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
+                resp = session.get(url=url1, headers=headers, verify=False)
+                content = resp.text
                 captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
                 captcha_retry = 1
                 while True:
