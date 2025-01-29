@@ -117,7 +117,7 @@ def start_task(email_domains, num_emails):
                       resp = session.get(url=url1, headers=headers, verify=False)
                       headers = resp.headers
                       content = resp.text
-                      csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
+                      csrftoken = re.findall(r"aisMKqh0wUIzvJ9RBRt1EfHrsEeHKddP", headers.get("set-cookie"))[0]
                       header2["Cookie"] = header2["Cookie"].format(csrftoken)
                       header3["Cookie"] = header3["Cookie"].format(csrftoken)
                       captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
