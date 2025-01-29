@@ -6,3 +6,4 @@ ddddocr
 fake-headers
 pytz
 PySocks
+fake-useragent
