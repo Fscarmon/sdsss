@@ -153,22 +153,31 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                 # 修改这里，只获取 csrftoken 使用 https://www.serv00.com
                 csrftoken = get_csrftoken_from_website(session, "https://www.serv00.com", headers, socks_proxies)
                 if not csrftoken:
-                   email_retry_count+=1
-                   continue
+                    email_retry_count += 1
+                    continue
+                
+                logger.info(f"获取的 csrftoken: {csrftoken}")
 
                 header2["Cookie"] = header2["Cookie"].format(csrftoken)
                 header3["Cookie"] = header3["Cookie"].format(csrftoken)
                 
                 
                 logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
-                resp = session.get(url=url1, headers=headers, verify=False)
+                resp = session.get(url=url1, headers=dict(headers, **{"Cookie": header2["Cookie"]}), verify=False) # 携带 Cookie
                 content = resp.text
-                captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
+                captcha_matches = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)
+                if captcha_matches:
+                    captcha_0 = captcha_matches[0]
+                else:
+                    logger.error("无法找到 captcha_0, 跳过此邮箱")
+                    email_retry_count += 1
+                    continue
+
                 captcha_retry = 1
                 while True:
                     time.sleep(random.uniform(2, 6))
                     logger.info("获取验证码")
-                    resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False); time.sleep(random.uniform(0.5, 2))
+                    resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"]}), verify=False); time.sleep(random.uniform(0.5, 2))  # 携带 Cookie
                     content = resp.content
                     with open("static/image.jpg", "wb") as f:
                         f.write(content)
@@ -190,7 +199,7 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                 data = f"csrfmiddlewaretoken={csrftoken}&first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=free&tos=on{urlencode(random_data)}"
                 time.sleep(random.uniform(0.5, 1.2))
                 logger.info("请求信息")
-                resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}), data=data, verify=False)
+                resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"]}), data=data, verify=False)  # 携带 Cookie
                 logger.debug(f"Headers: {resp.request.headers}")
                 logger.info(f'请求状态码: \033[1;93m{resp.status_code}\033[0m')
                 try:
