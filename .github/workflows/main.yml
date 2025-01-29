@@ -9,8 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      PROXY_LIST: ${{ secrets.PROXY_LIST }}
-      TARGET_EMAIL: ${{ secrets.TARGET_EMAIL }}
+      PROXY_LIST: ${{ secrets.SOCKS }}
+      TARGET_EMAIL: ${{ secrets.EMAIL_DOMAIN }}
     
     steps:
       - uses: actions/checkout@v4
