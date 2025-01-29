@@ -168,6 +168,7 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                 captcha_matches = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)
                 if captcha_matches:
                     captcha_0 = captcha_matches[0]
+                    logger.info(f"获取 captcha_0: {captcha_0}")
                 else:
                     logger.error("无法找到 captcha_0, 跳过此邮箱")
                     email_retry_count += 1
