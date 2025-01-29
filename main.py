@@ -19,6 +19,7 @@ from fake_headers import Headers
 from requests.exceptions import JSONDecodeError
 from concurrent.futures import ThreadPoolExecutor
 from http.cookies import SimpleCookie
+from fake_useragent import UserAgent
 
 os.makedirs("static", exist_ok=True)
 config_file = 'static/config.json'
@@ -45,13 +46,15 @@ def generate_random_email(domain):
     return f"{username}@{domain}"
 
 def generate_random_headers():
+    ua = UserAgent()
     return {
         "Accept-Language": random.choice(["en-US,en;q=0.9", "ja-JP,ja;q=0.9", "fr-FR,fr;q=0.9", "de-DE,de;q=0.9", "es-ES,es;q=0.9"]),
-        "User-Agent": Headers(os="random").generate()["User-Agent"],
+        "User-Agent": ua.random, # 使用 fake-useragent
         "X-Forwarded-For": Faker().ipv4(),
         "X-Network-Type": random.choice(["Wi-Fi", "4G", "5G"]),
         "X-Timezone": random.choice(pytz.all_timezones)
     }
+
 
 def generate_random_data():
     screen_resolution = f"{random.choice([1280, 1366, 1440, 1600, 1920])}x{random.choice([720, 768, 900, 1080, 1200])}"
@@ -107,13 +110,11 @@ def get_csrftoken_from_website(session, url, headers, socks_proxies):
             cookies.load(resp.headers.get('set-cookie'))
             csrftoken = cookies.get('csrftoken')
             if csrftoken:
-               return csrftoken.value
+                return csrftoken.value
         return None
     except requests.exceptions.RequestException as e:
         logger.error(f"获取csrftoken 失败: {e}")
         return None
-
-
 
 def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_chat_id, socks_proxies):
     email_retry_count = 0
@@ -148,7 +149,9 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
                     session.proxies = socks_proxies
                     logger.info(f"使用代理: {socks_proxies['http']}")
 
-                csrftoken = get_csrftoken_from_website(session, url1, headers, socks_proxies)
+                time.sleep(random.uniform(1, 3))
+                # 修改这里，只获取 csrftoken 使用 https://www.serv00.com
+                csrftoken = get_csrftoken_from_website(session, "https://www.serv00.com", headers, socks_proxies)
                 if not csrftoken:
                    email_retry_count+=1
                    continue
