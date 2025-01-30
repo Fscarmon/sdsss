@@ -1,3 +1,4 @@
+
 import os
 import re
 import json
@@ -11,6 +12,8 @@ import hashlib
 import asyncio
 import requests
 import cloudscraper
+import urllib3
+import ssl
 from faker import Faker
 from telegram import Bot
 from loguru import logger
@@ -19,12 +22,32 @@ from urllib.parse import quote, urlparse, parse_qs, urlencode
 from fake_headers import Headers
 from requests.exceptions import JSONDecodeError
 from concurrent.futures import ThreadPoolExecutor
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
+
+# 禁用SSL警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 os.makedirs("static", exist_ok=True)
 config_file = 'static/config.json'
 
+class CustomAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        ctx = create_urllib3_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        kwargs['ssl_context'] = ctx
+        return super(CustomAdapter, self).init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        ctx = create_urllib3_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        kwargs['ssl_context'] = ctx
+        return super(CustomAdapter, self).proxy_manager_for(*args, **kwargs)
+
 def get_scraper_session(socks_proxies=None):
-    """创建支持cloudflare的session"""
+    """创建支持cloudflare的session，并正确处理SSL"""
     scraper = cloudscraper.create_scraper(
         browser={
             'browser': 'chrome',
@@ -32,15 +55,21 @@ def get_scraper_session(socks_proxies=None):
             'mobile': False
         }
     )
+    
+    # 添加自定义适配器
+    scraper.mount('https://', CustomAdapter())
+    scraper.verify = False
+    
     if socks_proxies:
         scraper.proxies = socks_proxies
+    
     return scraper
 
 def get_user_name():
     """获取随机用户名"""
     url = "https://www.ivtool.com/random-name-generater/uinames/api/index.php?region=united%20states&gender=male&amount=5&="
     scraper = get_scraper_session()
-    resp = scraper.get(url, verify=False)
+    resp = scraper.get(url)
     if resp.status_code != 200:
         print(resp.status_code, resp.text)
         raise Exception("获取名字出错")
@@ -133,15 +162,19 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
             logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
             
             # 处理Cloudflare验证
-            resp = session.get(url2, verify=False)
+            resp = session.get(url2)
             if resp.status_code == 403:
                 logger.warning("检测到 Cloudflare 验证，正在尝试绕过...")
                 time.sleep(random.uniform(5, 10))
-                resp = session.get(url2, verify=False)
+                resp = session.get(url2)
             
+            if resp.status_code != 200:
+                logger.error(f"访问网站失败: {resp.status_code}")
+                raise Exception("无法访问网站")
+
             headers = resp.headers
             csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
-            resp = session.get(url1, verify=False)
+            resp = session.get(url1)
             content = resp.text
             
             captcha_url = "https://www.serv00.com/captcha/image/{}/"
@@ -152,7 +185,7 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
             while True:
                 time.sleep(random.uniform(2, 6))
                 logger.info("获取验证码")
-                resp = session.get(captcha_url.format(captcha_0), verify=False)
+                resp = session.get(captcha_url.format(captcha_0))
                 time.sleep(random.uniform(0.5, 2))
                 content = resp.content
                 
@@ -192,7 +225,7 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
             
             time.sleep(random.uniform(0.5, 1.2))
             logger.info("提交注册")
-            resp = session.post(url=url3, headers=header3, data=data, verify=False)
+            resp = session.post(url=url3, headers=header3, data=data)
             logger.info(f'请求状态码: \033[1;93m{resp.status_code}\033[0m')
             
             try:
@@ -228,7 +261,6 @@ def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_ch
         if email_retry_count >= max_email_retries:
             logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
             return
-
 def start_task(email_domains, num_emails):
     """启动注册任务"""
     max_captcha_retries = int(os.environ.get("MAX_CAPTCHA_RETRIES", 5))
