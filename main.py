@@ -1,5 +1,5 @@
 from DrissionPage import ChromiumPage
-from DrissionPage import SessionOptions
+from DrissionPage import ChromiumOptions
 import os
 import re
 import json
@@ -80,13 +80,13 @@ def start_task(email_domains, num_emails):
            email = generate_random_email(domain)
            while email_retry_count < max_email_retries:
                try:
-                   options = SessionOptions()
+                   options = ChromiumOptions()
                    
                    random_headers = generate_random_headers()
                    User_Agent = random_headers["User-Agent"]
                    
-                   options.set_argument(f'--user-agent="{User_Agent}"')
-                   options.set_argument('--disable-blink-features=AutomationControlled')
+                   options.set_argument("--user-agent=" + User_Agent)
+                   options.set_argument("--disable-blink-features=AutomationControlled")
                    if os.environ.get("SOCKS", ""):
                        options.set_argument(f'--proxy-server={os.environ.get("SOCKS", "")}')
                        
