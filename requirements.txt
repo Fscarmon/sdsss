@@ -1,8 +1,9 @@
-requests
-loguru
-fake-headers
-faker
-pytz
-ddddocr
-telegram
 cloudscraper
+pytz
+Faker
+loguru
+ddddocr
+requests
+fake_headers
+python-telegram-bot
+PySocks
