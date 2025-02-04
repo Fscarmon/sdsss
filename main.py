@@ -17,8 +17,7 @@ from datetime import datetime
 from urllib.parse import quote, urlparse, parse_qs, urlencode
 from fake_headers import Headers
 from requests.exceptions import JSONDecodeError
-import cloudscraper
-import urllib3  # 导入 urllib3
+from concurrent.futures import ThreadPoolExecutor
 
 os.makedirs("static", exist_ok=True)
 config_file = 'static/config.json'
@@ -98,8 +97,126 @@ def parse_socks_string(socks_str):
     return socks_str
 
 
+def process_email(email, max_captcha_retries, max_email_retries, tg_token, tg_chat_id, socks_proxies):
+    email_retry_count = 0
+    while email_retry_count < max_email_retries:
+        try:
+            random_headers = generate_random_headers()
+            random_data = generate_random_data()
+            User_Agent = random_headers["User-Agent"]
+            Cookie = "csrftoken={}"
+            url1 = "https://www.serv00.com/offer/create_new_account"
+            url2 = "https://www.serv00.com"
+            headers = {"User-Agent": User_Agent, **random_headers}
+            captcha_url = "https://www.serv00.com/captcha/image/{}/"
+            header2 = {"Cookie": Cookie, "User-Agent": User_Agent, **random_headers}
+            url3 = "https://www.serv00.com/offer/create_new_account.json"
+            header3 = {
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Referer": "https://www.serv00.com/offer/create_new_account",
+                "Cookie": Cookie,
+                "User-Agent": User_Agent,
+                **random_headers
+            }
+
+            usernames = get_user_name()
+            _ = usernames.pop()
+            first_name = _["name"]
+            last_name = _["surname"]
+            username = generate_random_username().lower()
+            print(""), logger.info(f"{email} {first_name} {last_name} {username}")
+            with requests.Session() as session:
+                if socks_proxies:
+                    session.proxies = socks_proxies
+                    logger.info(f"使用代理: {socks_proxies['http']}")
+                
+                logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{email_retry_count + 1}\033[0m.")
+                resp = session.get(url=url2, headers=headers, verify=False)
+                headers = resp.headers
+                csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
+                resp = session.get(url=url3, headers=headers, verify=False)
+       
+                content = resp.text
+                header2["Cookie"] = header2["Cookie"].format(csrftoken)
+                header3["Cookie"] = header3["Cookie"].format(csrftoken)
+                captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
+                captcha_retry = 1
+                while True:
+                    time.sleep(random.uniform(2, 6))
+                    logger.info("获取验证码")
+                    resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False); time.sleep(random.uniform(0.5, 2))
+                    content = resp.content
+                    with open("static/image.jpg", "wb") as f:
+                        f.write(content)
+                    captcha_1 = ddddocr.DdddOcr(show_ad=False).classification(content).upper()
+                    if bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
+                        logger.info(f"识别验证码成功: \033[1;92m{captcha_1}\033[0m")
+                        break
+                    else:
+                        logger.warning("\033[7m验证码识别失败,正在重试...\033[0m")
+                        captcha_retry += 1
+                        if captcha_retry > max_captcha_retries:
+                            logger.error(f"验证码识别失败次数过多({max_captcha_retries}), 正在跳过该邮箱.")
+                            return  # 跳出验证码重试循环
+                        continue
+                if captcha_retry > max_captcha_retries:
+                    email_retry_count += 1
+                    logger.info(f"邮箱 {email} 验证码重试次数({max_captcha_retries})已达上限, 准备重新开始注册尝试.")
+                    continue  # 跳过本次注册，重新开始尝试
+                data = f"csrfmiddlewaretoken={csrftoken}&first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=free&tos=on{urlencode(random_data)}"
+                time.sleep(random.uniform(0.5, 1.2))
+                logger.info("请求信息")
+                resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}), data=data, verify=False)
+                logger.info(f'请求状态码: \033[1;93m{resp.status_code}\033[0m')
+                try:
+                    content = resp.json()
+                    if resp.status_code == 200 and len(content.keys()) == 2:
+                        logger.success(f"\033[1;92m🎉 账户 {username} 已成功创建!\033[0m")
+                        if tg_token and tg_chat_id:
+                            asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}", tg_token,
+                                                    tg_chat_id))
+                        return  # 成功注册跳出循环，并跳出全局邮箱重试循环
+                    else:
+                        first_key = next(key for key in content if key not in ['__captcha_key', '__captcha_image_src'])
+                        first_content = re.search(r"\['(.+?)'\]", str(content[first_key])).group(1)
+                        logger.info(f"\033[36m{first_key.capitalize()}: {first_content}\033[0m")
+                        if first_content == "An account has already been registered to this e-mail address.":
+                           logger.warning(f"\033[1;92m该邮箱已存在,或账户 {username} 已成功创建🎉!")
+                           if tg_token and tg_chat_id:
+                               asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}", tg_token,
+                                                         tg_chat_id))
+                           return
+                except JSONDecodeError:
+                    logger.error("\033[7m获取信息错误,正在重试...\033[0m")
+                    time.sleep(random.uniform(0.5, 1.2))
+                    continue
+                if content.get("captcha") and content["captcha"][0] == "Invalid CAPTCHA":
+                    captcha_0 = content["__captcha_key"]
+                    logger.warning("\033[7m验证码错误,正在重新获取...\033[0m")
+                    time.sleep(random.uniform(0.5, 1.2))
+                    continue
+                if content.get("username") and content["username"][0] == "Maintenance time. Try again later.":
+                    email_retry_count += 1
+                    logger.error("\033[7m系统维护中,正在重试...\033[0m")
+                    time.sleep(random.uniform(0.5, 1.2))
+                    return
+                if content.get("email") and content["email"][0] == "Enter a valid email address.":
+                    logger.error("\033[7m无效的邮箱,请重新输入.\033[0m")
+                    time.sleep(random.uniform(0.5, 1.2))
+                    return
+                else:
+                    email_retry_count += 1
+                    continue
+        except Exception as e:
+            logger.error(f"\033[7m发生异常:{e},正在重新开始任务...\033[0m")
+            time.sleep(random.uniform(0.5, 1.2))
+            email_retry_count += 1
+        if email_retry_count >= max_email_retries:
+            logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
+            return  # 跳过此邮箱继续下一个
+
+
 def start_task(email_domains, num_emails):
-    max_cloudflare_retries = 3  # 最大 Cloudflare 尝试次数
     max_captcha_retries = int(os.environ.get("MAX_CAPTCHA_RETRIES", 5))
     max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10))
     tg_env = os.environ.get("TG", "")
@@ -148,171 +265,17 @@ def start_task(email_domains, num_emails):
     else:
         logger.info("SOCKS 环境变量未设置，将不使用代理")
 
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)  # 禁用 urllib3 的警告
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        futures = []
+        for domain in email_domains:
+            for _ in range(num_emails):
+                email = generate_random_email(domain)
+                future = executor.submit(process_email, email, max_captcha_retries, max_email_retries, tg_token, tg_chat_id, socks_proxies)
+                futures.append(future)
+        for future in futures:
+             future.result()
+            
 
-    for domain in email_domains:
-        for _ in range(num_emails):
-            id_retry = 1
-            email = generate_random_email(domain)
-            email_retry_count = 0
-            while email_retry_count < max_email_retries:
-                try:
-                    random_headers = generate_random_headers()
-                    random_data = generate_random_data()
-                    User_Agent = random_headers["User-Agent"]
-                    Cookie = "csrftoken={}"
-                    url1 = "https://www.serv00.com/offer/create_new_account"
-                    headers = {"User-Agent": User_Agent, **random_headers}
-                    captcha_url = "https://www.serv00.com/captcha/image/{}/"
-                    header2 = {"Cookie": Cookie, "User-Agent": User_Agent, **random_headers}
-                    url3 = "https://www.serv00.com/offer/create_new_account.json"
-                    header3 = {
-                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                        "Referer": "https://www.serv00.com/offer/create_new_account",
-                        "Cookie": Cookie,
-                        "User-Agent": User_Agent,
-                        **random_headers
-                    }
-
-                    usernames = get_user_name()
-                    _ = usernames.pop()
-                    first_name = _["name"]
-                    last_name = _["surname"]
-                    username = generate_random_username().lower()
-                    print(""), logger.info(f"{email} {first_name} {last_name} {username}")
-
-                    # 使用 cloudscraper 创建 session，并增加 Cloudflare 尝试次数
-                    for cloudflare_attempt in range(max_cloudflare_retries):
-                        try:
-                            session = cloudscraper.create_scraper()
-                            session.verify = False  # 禁用会话级别的 SSL 验证
-                            if socks_proxies:
-                                session.proxies = socks_proxies
-                                logger.info(f"使用代理: {socks_proxies['http']}")
-                            logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{id_retry}\033[0m. Cloudflare 尝试: {cloudflare_attempt + 1}/{max_cloudflare_retries}")
-
-                            resp = session.get(url=url1, headers=headers, verify=False)  # 明确禁用 SSL 验证
-                            resp.raise_for_status()  # 检查状态码，抛出异常
-                            headers = resp.headers
-                            content = resp.text
-                            break  # Cloudflare 验证成功，跳出重试循环
-
-                        except requests.exceptions.RequestException as e:
-                            logger.error(f"Cloudflare 验证失败 (尝试 {cloudflare_attempt + 1}/{max_cloudflare_retries}): {e}")
-                            time.sleep(random.uniform(2, 5))  # 等待一段时间后重试
-                    else:  # 如果 Cloudflare 验证所有尝试都失败
-                        logger.error(f"Cloudflare 验证失败，超过最大尝试次数 ({max_cloudflare_retries}).")
-                        email_retry_count += 1
-                        continue # 跳过当前邮箱
-
-                    try:
-                        csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
-                    except IndexError:
-                        logger.error("未找到 csrftoken。Cloudflare 可能仍然在阻止请求。")
-                        email_retry_count += 1
-                        continue  # 尝试下一个邮箱
-
-                    header2["Cookie"] = header2["Cookie"].format(csrftoken)
-                    header3["Cookie"] = header3["Cookie"].format(csrftoken)
-                    try:
-                        captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
-                    except IndexError:
-                        logger.error("未找到 captcha_0。网页结构可能已更改。")
-                        email_retry_count += 1
-                        continue
-
-                    captcha_retry = 1
-                    while True:
-                        time.sleep(random.uniform(0.5, 1.2))
-                        logger.info("获取验证码")
-                        try:
-                            resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False) # 明确禁用 SSL 验证
-                            resp.raise_for_status()
-                            content = resp.content
-                        except requests.exceptions.RequestException as e:
-                            logger.error(f"获取验证码失败: {e}")
-                            captcha_retry +=1
-                            if captcha_retry > max_captcha_retries:
-                                email_retry_count += 1
-                                break
-                            continue
-
-                        with open("static/image.jpg", "wb") as f:
-                            f.write(content)
-                        captcha_1 = ddddocr.DdddOcr(show_ad=False).classification(content).upper()
-                        if bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
-                            logger.info(f"识别验证码成功: \033[1;92m{captcha_1}\033[0m")
-                            break
-                        else:
-                            logger.warning("\033[7m验证码识别失败,正在重试...\033[0m")
-                            captcha_retry += 1
-                            if captcha_retry > max_captcha_retries:
-                                logger.error(f"验证码识别失败次数过多({max_captcha_retries}), 正在跳过该邮箱.")
-                                break  # 跳出验证码重试循环
-                            continue
-                    if captcha_retry > max_captcha_retries:
-                        email_retry_count += 1
-                        logger.info(f"邮箱 {email} 验证码重试次数({max_captcha_retries})已达上限, 准备重新开始注册尝试.")
-                        continue  # 跳过本次注册，重新开始尝试
-                    data = f"csrfmiddlewaretoken={csrftoken}&first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=free&tos=on{urlencode(random_data)}"
-                    time.sleep(random.uniform(0.5, 1.2))
-                    logger.info("请求信息")
-                    try:
-                        resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}), data=data, verify=False) # 明确禁用 SSL 验证
-                        resp.raise_for_status()
-                        content = resp.json()
-                    except requests.exceptions.RequestException as e:
-                         logger.error(f"POST 请求失败: {e}")
-                         email_retry_count += 1
-                         continue
-                    logger.info(f'请求状态码: \033[1;93m{resp.status_code}\033[0m')
-
-                    try:
-                        content = resp.json()
-                        if resp.status_code == 200 and len(content.keys()) == 2:
-                            logger.success(f"\033[1;92m🎉 账户 {username} 已成功创建!\033[0m")
-                            if tg_token and tg_chat_id:
-                               asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}", tg_token,
-                                                       tg_chat_id))
-                            break  # 成功注册跳出循环，并跳出全局邮箱重试循环
-                        else:
-                            first_key = next(key for key in content if key not in ['__captcha_key', '__captcha_image_src'])
-                            first_content = re.search(r"\['(.+?)'\]", str(content[first_key])).group(1)
-                            logger.info(f"\033[36m{first_key.capitalize()}: {first_content}\033[0m")
-                            if first_content == "An account has already been registered to this e-mail address.":
-                               logger.warning(f"\033[1;92m该邮箱已存在,或账户 {username} 已成功创建🎉!")
-                               if tg_token and tg_chat_id:
-                                   asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}", tg_token,
-                                                             tg_chat_id))
-                               break
-                    except JSONDecodeError:
-                        logger.error("\033[7m获取信息错误,正在重试...\033[0m")
-                        time.sleep(random.uniform(0.5, 1.2))
-                        continue
-                    if content.get("captcha") and content["captcha"][0] == "Invalid CAPTCHA":
-                        captcha_0 = content["__captcha_key"]
-                        logger.warning("\033[7m验证码错误,正在重新获取...\033[0m")
-                        time.sleep(random.uniform(0.5, 1.2))
-                        continue
-                    if content.get("username") and content["username"][0] == "Maintenance time. Try again later.":
-                        email_retry_count += 1
-                        logger.error("\033[7m系统维护中,正在重试...\033[0m")
-                        time.sleep(random.uniform(0.5, 1.2))
-                        break
-                    if content.get("email") and content["email"][0] == "Enter a valid email address.":
-                        logger.error("\033[7m无效的邮箱,请重新输入.\033[0m")
-                        time.sleep(random.uniform(0.5, 1.2))
-                        return
-                    else:
-                        email_retry_count += 1
-                        continue
-                except Exception as e:
-                    logger.error(f"\033[7m发生异常:{e},正在重新开始任务...\033[0m")
-                    time.sleep(random.uniform(0.5, 1.2))
-                    email_retry_count += 1
-                if email_retry_count >= max_email_retries:
-                    logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
-                    continue  # 跳过此邮箱继续下一个
 
 if __name__ == "__main__":
     os.system("cls" if os.name == "nt" else "clear")
