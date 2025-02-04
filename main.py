@@ -71,33 +71,35 @@ def generate_random_data():
        "canvas_fingerprint": hashlib.md5(os.urandom(16)).hexdigest(),
        "plugins": random.sample(["Chrome PDF Viewer", "Google Docs Offline", "AdBlock", "Grammarly", "LastPass"], k=random.randint(2, 5))
    }
-
 def start_task(email_domains, num_emails):
-   max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10))
-   email_retry_count = 0
-   for domain in email_domains:
-       for _ in range(num_emails):
-           email = generate_random_email(domain)
-           while email_retry_count < max_email_retries:
-               try:
-                   options = ChromiumOptions()
-                   
-                   random_headers = generate_random_headers()
-                   User_Agent = random_headers["User-Agent"]
-                   
-                   options.set_argument("--user-agent=" + User_Agent)
-                   options.set_argument("--disable-blink-features=AutomationControlled")
-                   if os.environ.get("SOCKS", ""):
-                       options.set_argument(f'--proxy-server={os.environ.get("SOCKS", "")}')
-                       
-                   options.set_headers({'Accept-Language': random_headers["Accept-Language"]})
-                   
-                   options.headless = False  # for debugging
-                   page = ChromiumPage(options=options)
+    max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10))
+    email_retry_count = 0
+    for domain in email_domains:
+        for _ in range(num_emails):
+            email = generate_random_email(domain)
+            while email_retry_count < max_email_retries:
+                try:
+                    options = ChromiumOptions()
+                    
+                    random_headers = generate_random_headers()
+                    User_Agent = random_headers["User-Agent"]
+                    
+                    options.set_argument("--user-agent=" + User_Agent)
+                    options.set_argument("--disable-blink-features=AutomationControlled")
+                    if os.environ.get("SOCKS", ""):
+                        options.set_argument(f'--proxy-server={os.environ.get("SOCKS", "")}')
+                    
+                    options.headless = False  # for debugging
+                    page = ChromiumPage(options=options)
+                    
+                    # 在这里设置headers
+                    page.set.headers(headers={'Accept-Language': random_headers["Accept-Language"]})
 
-                   # Registration flow
-                   url1 = "https://www.serv00.com/offer/create_new_account"
-                   page.get(url1)
+                    # Registration flow
+                    url1 = "https://www.serv00.com/offer/create_new_account"
+                    page.get(url1)
+
+                    # 其余代码保持不变...
 
                    # Wait for Cloudflare to complete (adjust timeout as needed)
                    page.wait.sleep(5)
