@@ -17,7 +17,8 @@ from datetime import datetime
 from urllib.parse import quote, urlparse, parse_qs, urlencode
 from fake_headers import Headers
 from requests.exceptions import JSONDecodeError
-import cloudscraper  # 导入 cloudscraper
+import cloudscraper
+import urllib3  # 导入 urllib3
 
 os.makedirs("static", exist_ok=True)
 config_file = 'static/config.json'
@@ -147,6 +148,8 @@ def start_task(email_domains, num_emails):
     else:
         logger.info("SOCKS 环境变量未设置，将不使用代理")
 
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)  # 禁用 urllib3 的警告
+
     for domain in email_domains:
         for _ in range(num_emails):
             id_retry = 1
@@ -182,13 +185,13 @@ def start_task(email_domains, num_emails):
                     for cloudflare_attempt in range(max_cloudflare_retries):
                         try:
                             session = cloudscraper.create_scraper()
-
+                            session.verify = False  # 禁用会话级别的 SSL 验证
                             if socks_proxies:
                                 session.proxies = socks_proxies
                                 logger.info(f"使用代理: {socks_proxies['http']}")
                             logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{id_retry}\033[0m. Cloudflare 尝试: {cloudflare_attempt + 1}/{max_cloudflare_retries}")
 
-                            resp = session.get(url=url1, headers=headers, verify=False)
+                            resp = session.get(url=url1, headers=headers, verify=False)  # 明确禁用 SSL 验证
                             resp.raise_for_status()  # 检查状态码，抛出异常
                             headers = resp.headers
                             content = resp.text
@@ -223,7 +226,7 @@ def start_task(email_domains, num_emails):
                         time.sleep(random.uniform(0.5, 1.2))
                         logger.info("获取验证码")
                         try:
-                            resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False)
+                            resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False) # 明确禁用 SSL 验证
                             resp.raise_for_status()
                             content = resp.content
                         except requests.exceptions.RequestException as e:
@@ -255,7 +258,7 @@ def start_task(email_domains, num_emails):
                     time.sleep(random.uniform(0.5, 1.2))
                     logger.info("请求信息")
                     try:
-                        resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}), data=data, verify=False)
+                        resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}), data=data, verify=False) # 明确禁用 SSL 验证
                         resp.raise_for_status()
                         content = resp.json()
                     except requests.exceptions.RequestException as e:
