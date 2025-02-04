@@ -1,11 +1,8 @@
-undetected-chromedriver
-selenium
-ddddocr
-fake-headers
-faker
-telegram
 requests
 loguru
-python-dotenv
-urllib3
-certifi
+fake-headers
+faker
+pytz
+ddddocr
+telegram
+cloudscraper
