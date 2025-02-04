@@ -246,6 +246,7 @@ def start_task(email_domains, num_emails):
                             logger.error("Failed to extract CSRF token.")
                             email_retry_count += 1
                             continue
+
                         header2["Cookie"] = header2["Cookie"].format(csrftoken)
                         header3["Cookie"] = header3["Cookie"].format(csrftoken)
 
@@ -341,7 +342,7 @@ def start_task(email_domains, num_emails):
                     finally:
                         driver.quit()  # Ensure the browser closes
 
-                if email_retry_count >= max_email_retries:
+                if email_retry_count >= max_email_retries:  # Correct indentation
                     logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
                     continue  # 跳过此邮箱继续下一个
 
