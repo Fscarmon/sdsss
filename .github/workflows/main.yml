@@ -20,7 +20,7 @@ jobs:
           python-version: '3.9' # 根据你的python版本修改
 
       - name: Install dependencies
-        run: pip install cloudflare-scrape && pip3 install -r requirements.txt
+        run: pip3 install -r requirements.txt
 
       - name: Run crawler
         env:
