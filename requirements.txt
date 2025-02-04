@@ -1,8 +1,7 @@
-pytz
-Faker
+DrissionPage
 loguru
-ddddocr
+fake-headers
+Faker
 requests
-fake_headers
-python-telegram-bot
-PySocks
+ddddocr
+pytz
