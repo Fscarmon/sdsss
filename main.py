@@ -82,22 +82,20 @@ def start_task(email_domains, num_emails):
                 try:
                     # DrissionPage setup
                     options = SessionOptions()
+
+                    # CORRECT WAY: Modify arguments and headers directly through the options dictionary
                     random_headers = generate_random_headers()
                     User_Agent = random_headers["User-Agent"]
 
-                    # CORRECT WAY: Set arguments using the 'arguments' property
-                    options.arguments.append(f'--user-agent="{User_Agent}"')  # Set User-Agent
-                    #options.arguments.append('--disable-blink-features=AutomationControlled') #Try to hide automation
+                    options['arguments'] = [f'--user-agent="{User_Agent}"']
+                    options['arguments'].append('--disable-blink-features=AutomationControlled')
 
-                    options.add_header('Accept-Language', random_headers["Accept-Language"])
+                    if os.environ.get("SOCKS", ""):
+                        options['arguments'].append(f'--proxy-server={os.environ.get("SOCKS", "")}')
 
-                    # Proxy
-                    socks_env = os.environ.get("SOCKS", "")
-                    if socks_env:
-                        options.arguments.append(f'--proxy-server={socks_env}')  # Correct Way
-                        logger.info(f"使用代理: {socks_env}")
+                    options['headers']['Accept-Language'] = random_headers["Accept-Language"]  # Set Accept-Language
 
-                    options.headless = False # for debugging
+                    options.headless = False  # for debugging
                     page = ChromiumPage(options=options)
 
                     # Registration flow
@@ -120,12 +118,12 @@ def start_task(email_domains, num_emails):
 
                     # Save captcha image
                     image_path = "static/image.jpg"
-                    page.save.page(image_path) # Save the whole page as an image (debugging)
+                    page.save.page(image_path)  # Save the whole page as an image (debugging)
                     page.get_img(index=1).save(image_path)  # Assuming captcha is the first img
 
                     # OCR
                     with open(image_path, "rb") as f:
-                         captcha_1 = ddddocr.DdddOcr(show_ad=False).classification(f.read()).upper()
+                        captcha_1 = ddddocr.DdddOcr(show_ad=False).classification(f.read()).upper()
                     logger.info(f"识别验证码: \033[1;92m{captcha_1}\033[0m")
                     if not bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
                         logger.warning("\033[7m验证码识别失败，跳过此次尝试...\033[0m")
