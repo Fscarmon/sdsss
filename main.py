@@ -15,6 +15,7 @@ from datetime import datetime
 from urllib.parse import quote, urlencode
 from fake_headers import Headers
 import pytz
+
 os.makedirs("static", exist_ok=True)
 
 def get_user_name():
@@ -83,13 +84,13 @@ def start_task(email_domains, num_emails):
                     options = SessionOptions()
                     random_headers = generate_random_headers()
                     User_Agent = random_headers["User-Agent"]
-                    options.set_argument(f'--user-agent="{User_Agent}"')  # Set User-Agent
+                    options.add_argument(f'--user-agent="{User_Agent}"')  # Set User-Agent  <--- CHANGED
                     options.add_header('Accept-Language', random_headers["Accept-Language"])
 
                     # Proxy
                     socks_env = os.environ.get("SOCKS", "")
                     if socks_env:
-                        options.set_argument(f'--proxy-server={socks_env}')
+                        options.add_argument(f'--proxy-server={socks_env}')  # <--- CHANGED
                         logger.info(f"使用代理: {socks_env}")
 
                     options.headless = False # for debugging
