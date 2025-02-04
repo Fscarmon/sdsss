@@ -7,3 +7,4 @@ requests
 fake_headers
 python-telegram-bot
 PySocks
+urllib3
