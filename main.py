@@ -84,13 +84,17 @@ def start_task(email_domains, num_emails):
                     options = SessionOptions()
                     random_headers = generate_random_headers()
                     User_Agent = random_headers["User-Agent"]
-                    options.add_argument(f'--user-agent="{User_Agent}"')  # Set User-Agent  <--- CHANGED
+
+                    # CORRECT WAY: Set arguments using the 'arguments' property
+                    options.arguments.append(f'--user-agent="{User_Agent}"')  # Set User-Agent
+                    #options.arguments.append('--disable-blink-features=AutomationControlled') #Try to hide automation
+
                     options.add_header('Accept-Language', random_headers["Accept-Language"])
 
                     # Proxy
                     socks_env = os.environ.get("SOCKS", "")
                     if socks_env:
-                        options.add_argument(f'--proxy-server={socks_env}')  # <--- CHANGED
+                        options.arguments.append(f'--proxy-server={socks_env}')  # Correct Way
                         logger.info(f"使用代理: {socks_env}")
 
                     options.headless = False # for debugging
