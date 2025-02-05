@@ -197,33 +197,20 @@ def register_email(email):
 
                     # 4. 构建并提交表单数据
                     url_submit = "https://www.serv00.com/offer/create_new_account.json"
-                    header_submit = {
-                        "Host": "www.serv00.com",
-                        "User-Agent": ua,
-                        "Accept": "*/*",
-                        "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Origin": "https://www.serv00.com",
-                        "Connection": "keep-alive",
-                        "Referer": "https://www.serv00.com/offer/create_new_account",
-                        "Cookie": cookie,
-                        "Sec-Fetch-Dest": "empty",
-                        "Sec-Fetch-Mode": "cors",
-                        "Sec-Fetch-Site": "same-origin",
-                        "Priority": "u=1",
-                    }
+
+                    # **重要：使用与之前相同的 header_create_account 来提交注册**
+                    submit_headers = header_create_account # 使用相同的header
+
                     data = f"first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=0&tos=on"
                     logger.info(f"POST 数据: {data}")
 
                     logger.info(f"请求URL: {url_submit}")
-                    resp_submit = session.post(url_submit, headers=header_submit, data=data,
+                    resp_submit = session.post(url_submit, headers=submit_headers, data=data,
                                                 impersonate="chrome124")
 
+                    resp_submit.raise_for_status()  # 检查状态码
+
                     logger.info(f"提交注册信息状态码: {resp_submit.status_code}")
-                    if resp_submit.status_code != 200:
-                        logger.error(f"提交注册信息失败，状态码: {resp_submit.status_code}, 响应内容: {resp_submit.text}")
-                        raise Exception(f"提交注册信息失败，状态码: {resp_submit.status_code}")
 
                     content_submit = resp_submit.json()
                     logger.info(f"提交注册信息响应: {content_submit}")
