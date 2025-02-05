@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import os
 import string
 import random
@@ -12,6 +11,8 @@ import threading
 from faker import Faker
 import brotli
 import gzip
+from PIL import Image  # Import Pillow (PIL) for image processing
+import io
 
 ocr = ddddocr.DdddOcr()
 fake = Faker()
@@ -89,14 +90,20 @@ def register_email(email):
             }
             url_base = "https://www.serv00.com"
             logger.info(f"请求URL: {url_base}")
-            resp_base = session.get(url_base, headers=header_base, impersonate="chrome124")
-            logger.info(f"获取基础页面状态码: {resp_base.status_code}")
+            try:
+                resp_base = session.get(url_base, headers=header_base, impersonate="chrome124")
+                resp_base.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            except requests.RequestException as e:
+                logger.error(f"获取基础页面失败: {e}")
+                return
 
-            if resp_base.status_code != 200:
-                logger.error(f"获取基础页面失败，状态码: {resp_base.status_code}, 响应内容: {resp_base.text}")
-                raise Exception(f"获取基础页面失败，状态码: {resp_base.status_code}")
+            logger.info(f"获取基础页面状态码: {resp_base.status_code}")
             cookie = resp_base.headers.get("set-cookie")
             logger.info(f"获取Cookie: {cookie}")
+
+            if not cookie:
+                logger.warning("没有获取到 Cookie，可能需要检查请求或服务器行为。")
+                return
 
             try:
                 usernames = get_user_name()
@@ -116,7 +123,6 @@ def register_email(email):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
                 "Accept": "*/*",
                 "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-                #"Accept-Encoding": "gzip, deflate, br",  # 移除 Accept-Encoding
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://www.serv00.com",
@@ -130,62 +136,55 @@ def register_email(email):
                 "Cache-Control": "no-cache",
 
             }
-            header_create_account.pop("Accept-Encoding", None)  # 确保移除 Accept-Encoding
 
-            logger.info(f"请求URL: {url_create_account}")
-            resp_create_account = session.get(url_create_account, headers=header_create_account,
-                                              impersonate="chrome124")
+            try:
+                resp_create_account = session.get(url_create_account, headers=header_create_account,
+                                                  impersonate="chrome124")
+                resp_create_account.raise_for_status()
+            except requests.RequestException as e:
+                logger.error(f"获取 captcha_0 失败: {e}")
+                return
+
             logger.info(f"获取 captcha_0 状态码: {resp_create_account.status_code}")
 
-            if resp_create_account.status_code == 200 and resp_create_account.content:
-                content_create_account = resp_create_account.text
-               
-                try:
-                    content_create_account = eval(content_create_account)
-                    captcha_0 = content_create_account["__captcha_key"]
-                    logger.info(f"提取captcha_0成功: {captcha_0}")
-                except (KeyError, SyntaxError, TypeError) as e:
-                    logger.error(f"提取captcha_0失败，content: {content_create_account}, 错误信息：{str(e)}")
-                    raise Exception(f"提取captcha_0失败：{str(e)}")
-            else:
-                logger.error(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}, 响应内容为空或错误")
-                raise Exception(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}， 响应内容为空或错误")
+            content_create_account = resp_create_account.text
+
+            try:
+                content_create_account = eval(content_create_account)
+                captcha_0 = content_create_account["__captcha_key"]
+                logger.info(f"提取captcha_0成功: {captcha_0}")
+            except (KeyError, SyntaxError, TypeError) as e:
+                logger.error(f"提取captcha_0失败，content: {content_create_account}, 错误信息：{str(e)}")
+                raise Exception(f"提取captcha_0失败：{str(e)}")
 
             # 3. 构建验证码图片URL
             captcha_url = f"https://www.serv00.com/captcha/image/{captcha_0}/"
             logger.info(f"验证码图片URL: {captcha_url}")
 
-            header_captcha = {
-                "Host": "www.serv00.com",
-                "User-Agent": ua,
-                "Accept": "image/avif,image/webp,*/*",
-                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-                "Sec-GPC": "1",
-                "Connection": "keep-alive",
-                "Referer": "https://www.serv00.com/offer/create_new_account",
-                "Cookie": cookie,  # 使用获取的 cookie
-                "Sec-Fetch-Dest": "image",
-                "Sec-Fetch-Mode": "no-cors",
-                "Sec-Fetch-Site": "same-origin",
-                "Priority": "u=4",
-                "TE": "trailers",
-            }
+            # **关键更改：使用与 JSON 请求相同的 Headers**
+            image_headers = header_create_account  # 使用与获取 JSON 相同的 Headers
 
             for retry in range(5):
                 time.sleep(random.uniform(0.5, 1.2))
                 logger.info(f"第 {retry + 1} 次尝试获取验证码")
                 try:
                     logger.info(f"请求验证码图片URL: {captcha_url}")
-                    resp_captcha = session.get(captcha_url, headers=header_captcha, impersonate="chrome124")
+                    resp_captcha = session.get(captcha_url, headers=image_headers, impersonate="chrome124") # 使用相同的Headers
 
-                    logger.info(f"获取验证码图片状态码: {resp_captcha.status_code}")
-                    if resp_captcha.status_code != 200:
-                        logger.error(f"获取验证码图片失败，状态码: {resp_captcha.status_code}, 响应内容: {resp_captcha.text}")
-                        raise Exception(f"获取验证码图片失败，状态码: {resp_captcha.status_code}")
+                    resp_captcha.raise_for_status() # 检查状态码
 
                     content_captcha = resp_captcha.content
-                    with open("static/image.jpg", "wb") as f:
-                        f.write(content_captcha)
+
+                    # 使用 io.BytesIO 从内存中读取图像数据
+                    image_stream = io.BytesIO(content_captcha)
+                    try:
+                        img = Image.open(image_stream)
+
+                        # 使用 Pillow 保存图像
+                        img.save("static/image.jpg")
+                    except Exception as e:
+                        logger.error(f"保存图片失败: {e}")
+                        continue
 
                     captcha_1 = ocr.classification(content_captcha).lower()
                     logger.info(f"OCR识别结果: {captcha_1}")
@@ -239,9 +238,16 @@ def register_email(email):
 
                 except Exception as e:
                     logger.error(f"获取验证码或提交注册信息失败: {e}")
+                finally:
+                    # 无论成功与否，删除图片
+                    if os.path.exists("static/image.jpg"):
+                        os.remove("static/image.jpg")
+                    else:
+                        logger.warning("图片 static/image.jpg 不存在，无法删除")
+
 
             logger.warning(f"邮箱 {email} 注册失败，尝试下一个邮箱")
-            os.remove("static/image.jpg")
+
 
     except Exception as e:
         logger.error(f"获取 cookie 或 captcha_0 失败: {e}")
