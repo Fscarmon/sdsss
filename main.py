@@ -20,7 +20,7 @@ fake = Faker()
 
 os.makedirs("static", exist_ok=True)
 
-NUM_THREADS = 50  # 线程数量
+NUM_THREADS = 20  # 线程数量
 EMAIL_QUEUE = Queue() # 邮箱队列
 
 # User-Agent 列表，可以根据需要扩充
