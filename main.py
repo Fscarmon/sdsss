@@ -82,39 +82,56 @@ def load_proxies(config):
     except FileNotFoundError:
         logger.warning(f"Proxy file '{config.proxy_file}' not found.")
 
+    # Standardize proxy format before testing
+    formatted_proxies = []
+    for proxy_string in proxies:
+        formatted_proxy = format_proxy(proxy_string)
+        if formatted_proxy:
+            formatted_proxies.append(formatted_proxy)
+
     # Test and store working proxies
     test_url = "https://www.google.com"  # Or any reliable URL
-    tested_proxies = test_proxies(proxies, test_url, config.request_timeout)
+    tested_proxies = test_proxies(formatted_proxies, test_url, config.request_timeout)
     config.working_proxies = tested_proxies
     logger.info(f"Found {len(config.working_proxies)} working proxies.")
 
 
+def format_proxy(proxy_string):
+    """Converts a proxy string to the standard format 'protocol://ip:port'."""
+    proxy_string = proxy_string.strip()
+    if not proxy_string:
+        return None
+
+    try:
+        parts = proxy_string.split(":")
+        if len(parts) != 3:
+            logger.warning(f"Invalid proxy format: {proxy_string}")
+            return None
+
+        ip, port, proxy_type = parts[0], parts[1], parts[2].lower()
+        return f"{proxy_type}://{ip}:{port}"
+
+    except Exception as e:
+        logger.error(f"Error formatting proxy {proxy_string}: {e}")
+        return None
+
 
 def test_proxies(proxies, test_url, timeout):
-    """Tests a list of proxies and returns only the working ones. Stores working proxies as 'protocol://ip:port'."""
+    """Tests a list of proxies (already in 'protocol://ip:port' format) and returns only the working ones."""
     working_proxies = []
-    for proxy_string in proxies:
-        proxy_string = proxy_string.strip()
-        if not proxy_string:  # Skip empty lines
-            continue
+    for formatted_proxy in proxies:
 
         try:
-            parts = proxy_string.split(":")
-            if len(parts) != 3:  # Corrected condition. Must have 3 parts.
-                logger.warning(f"Invalid proxy format: {proxy_string}")
-                continue
-            ip, port, proxy_type = parts[0], parts[1], parts[2].lower()
-            formatted_proxy = f"{proxy_type}://{ip}:{port}"  # Correctly format the proxy
-            proxies_dict = {"http": formatted_proxy, "https": formatted_proxy} # format the proxy here.
 
-            try:
-                response = requests.get(test_url, proxies=proxies_dict, timeout=timeout)
-                response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-                working_proxies.append(formatted_proxy)  # Store formatted proxy
-                logger.info(f"Proxy {proxy_string} is working.")
+            proxies_dict = {"http": formatted_proxy, "https": formatted_proxy}
 
-            except requests.errors.RequestsError as e:
-                logger.warning(f"Proxy {proxy_string} failed: {e}")  # Changed Exception Class
+            response = requests.get(test_url, proxies=proxies_dict, timeout=timeout)
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            working_proxies.append(formatted_proxy)
+            logger.info(f"Proxy {formatted_proxy} is working.")
+
+        except requests.errors.RequestsError as e:
+            logger.warning(f"Proxy {formatted_proxy} failed: {e}")  # Changed Exception Class
 
         except Exception as e:
              logger.error(f"Proxy testing encountered an error: {e}")
