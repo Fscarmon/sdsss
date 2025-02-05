@@ -138,29 +138,8 @@ def register_email(email):
             logger.info(f"获取 captcha_0 状态码: {resp_create_account.status_code}")
 
             if resp_create_account.status_code == 200 and resp_create_account.content:
-                content_encoding = resp_create_account.headers.get('Content-Encoding', '')
 
-                if content_encoding:
-                    logger.warning(f"响应使用了 Content-Encoding: {content_encoding}, 但不应该有. ")
-
-                if 'gzip' in content_encoding:
-                    try:
-                        content_create_account = gzip.decompress(resp_create_account.content).decode('utf-8')
-                        logger.info("使用 gzip 解压缩成功")
-                    except Exception as e:
-                        logger.error(f"gzip 解压缩失败: {e}, 响应内容 (前 100 个字符): {resp_create_account.text[:100]}")
-                        raise
-                elif 'br' in content_encoding:
-                    try:
-                        content_create_account = brotli.decompress(resp_create_account.content).decode('utf-8')  # 需要 pip install brotli
-                        logger.info("使用 brotli 解压缩成功")
-                    except Exception as e:
-                        logger.error(f"brotli 解压缩失败: {e}, 响应内容 (前 100 个字符): {resp_create_account.text[:100]}")
-                        raise
-                else:
-                    content_create_account = resp_create_account.text
-                    logger.info("未使用 gzip 或 brotli 压缩")
-
+                content_create_account = resp_create_account.text
                 try:
                     content_create_account = eval(content_create_account)
                     captcha_0 = content_create_account["__captcha_key"]
