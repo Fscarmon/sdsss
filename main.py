@@ -91,7 +91,7 @@ def load_proxies(config):
 
 
 def test_proxies(proxies, test_url, timeout):
-    """Tests a list of proxies and returns only the working ones."""
+    """Tests a list of proxies and returns only the working ones. Stores working proxies as 'protocol://ip:port'."""
     working_proxies = []
     for proxy_string in proxies:
         proxy_string = proxy_string.strip()
@@ -100,21 +100,21 @@ def test_proxies(proxies, test_url, timeout):
 
         try:
             parts = proxy_string.split(":")
-            if len(parts) < 3:
+            if len(parts) != 3:  # Corrected condition. Must have 3 parts.
                 logger.warning(f"Invalid proxy format: {proxy_string}")
                 continue
             ip, port, proxy_type = parts[0], parts[1], parts[2].lower()
-            proxy = f"{proxy_type}://{ip}:{port}"
+            formatted_proxy = f"{proxy_type}://{ip}:{port}"  # Correctly format the proxy
+            proxies_dict = {"http": formatted_proxy, "https": formatted_proxy} # format the proxy here.
 
-            proxies_dict = {"http": proxy, "https": proxy} # format the proxy here.
+            try:
+                response = requests.get(test_url, proxies=proxies_dict, timeout=timeout)
+                response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+                working_proxies.append(formatted_proxy)  # Store formatted proxy
+                logger.info(f"Proxy {proxy_string} is working.")
 
-            response = requests.get(test_url, proxies=proxies_dict, timeout=timeout)
-            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-            working_proxies.append(proxy_string)
-            logger.info(f"Proxy {proxy_string} is working.")
-
-        except requests.errors.RequestsError as e:
-            logger.warning(f"Proxy {proxy_string} failed: {e}")  # Changed Exception Class
+            except requests.errors.RequestsError as e:
+                logger.warning(f"Proxy {proxy_string} failed: {e}")  # Changed Exception Class
 
         except Exception as e:
              logger.error(f"Proxy testing encountered an error: {e}")
@@ -133,15 +133,8 @@ def register_email(email, ua, proxy=None):
     try:
         with requests.Session() as session:
             if proxy:
-                parts = proxy.split(":")
-                if len(parts) < 3:
-                    logger.warning(f"Invalid proxy format: {proxy}")
-                    return
-
-                ip, port, proxy_type = parts[0], parts[1], parts[2].lower()
-                formatted_proxy = f"{proxy_type}://{ip}:{port}"
-                session.proxies = {"http": formatted_proxy, "https": formatted_proxy}
-
+                # No need to split, the proxy is already formatted
+                session.proxies = {"http": proxy, "https": proxy}
                 logger.info(f"Using proxy: {proxy}")
 
             header_base = {
@@ -190,7 +183,7 @@ def register_email(email, ua, proxy=None):
                 "Host": "www.serv00.com",
                 "User-Agent": ua,
                 "Accept": "*/*",
-                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q;0.2",
+                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q;0.2",
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://www.serv00.com",
