@@ -102,14 +102,18 @@ def format_proxy(proxy_string):
     if not proxy_string:
         return None
 
+    # Check if already in the standard format
+    if re.match(r"^(http|https|socks4|socks5)://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}$", proxy_string):
+        return proxy_string
+
     try:
         parts = proxy_string.split(":")
-        if len(parts) != 3:
+        if len(parts) == 3:
+            ip, port, proxy_type = parts[0], parts[1], parts[2].lower()
+            return f"{proxy_type}://{ip}:{port}"
+        else:
             logger.warning(f"Invalid proxy format: {proxy_string}")
             return None
-
-        ip, port, proxy_type = parts[0], parts[1], parts[2].lower()
-        return f"{proxy_type}://{ip}:{port}"
 
     except Exception as e:
         logger.error(f"Error formatting proxy {proxy_string}: {e}")
