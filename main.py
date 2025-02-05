@@ -10,6 +10,8 @@ from urllib.parse import quote
 from loguru import logger
 import threading
 from faker import Faker
+import brotli
+import gzip
 
 ocr = ddddocr.DdddOcr()
 fake = Faker()
@@ -126,6 +128,7 @@ def register_email(email):
                 "Sec-Fetch-Site": "same-origin",
                 "Pragma": "no-cache",
                 "Cache-Control": "no-cache",
+                "Accept-Encoding": "gzip, deflate, br" # 加上
             }
 
             logger.info(f"请求URL: {url_create_account}")
@@ -135,9 +138,26 @@ def register_email(email):
 
             if resp_create_account.status_code == 200 and resp_create_account.content:
 
-                content_create_account = resp_create_account.text  # 直接使用 text
+                content_create_account = resp_create_account.text  # 获取响应内容
 
+                content_encoding = resp_create_account.headers.get('Content-Encoding', '')
                 try:
+
+                    if 'gzip' in content_encoding:
+                        try:
+                            content_create_account = gzip.decompress(resp_create_account.content).decode('utf-8')
+                            logger.info("使用 gzip 解压缩成功")
+                        except Exception as e:
+                            logger.error(f"gzip 解压缩失败: {e}, 但是仍然尝试进行 JSON 提取")
+
+
+                    elif 'br' in content_encoding:
+                        try:
+                            content_create_account = brotli.decompress(resp_create_account.content).decode('utf-8')
+                            logger.info("使用 brotli 解压缩成功")
+                        except Exception as e:
+                            logger.error(f"brotli 解压缩失败: {e}, 但是仍然尝试进行 JSON 提取")
+
                     # 使用字符串操作提取 __captcha_key
                     start_index = content_create_account.find('"__captcha_key": "') + len('"__captcha_key": "')
                     end_index = content_create_account.find('"', start_index)
