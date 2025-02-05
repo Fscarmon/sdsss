@@ -156,3 +156,20 @@ def start_task(email_domains, num_emails):
                 if email_retry_count >= max_email_retries:
                     logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 跳过该邮箱")
                     break
+
+
+if __name__ == "__main__":
+    os.system("cls" if os.name == "nt" else "clear")
+    resp = requests.get("https://www.serv00.com/", verify=False)
+    response = requests.get('https://ping0.cc/geo', verify=False)
+    print(f"=============================\n\033[96m{response.text[:200]}\033[0m=============================")
+    match = re.search(r'(\d+)\s*/\s*(\d+)', resp.text).group(0).replace(' ', '') if resp.status_code == 200 and re.search(r'(\d+)\s*/\s*(\d+)', resp.text) else (logger.error('请求失败,请检查代理IP是否封禁!'), exit())
+    logger.info(f"\033[1;5;32m当前注册量:{match}\033[0m")
+
+    # 读取环境变量
+    email_domains_str = os.environ.get("EMAIL_DOMAIN", "")
+    email_domains = [domain.strip() for domain in email_domains_str.split(';')]
+
+    num_emails = int(os.environ.get("NUM_EMAILS", 10))
+
+    start_task(email_domains, num_emails)
