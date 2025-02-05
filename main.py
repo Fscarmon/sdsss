@@ -87,12 +87,13 @@ def register_email(email):
             }
             url_base = "https://www.serv00.com"
             logger.info(f"请求URL: {url_base}")
-            resp_base = session.get(url_base, headers=header_base, impersonate="chrome124")
+            resp_base = session.get(url=url_base, headers=header_base, impersonate="chrome124")
             logger.info(f"获取基础页面状态码: {resp_base.status_code}")
 
             if resp_base.status_code != 200:
                 logger.error(f"获取基础页面失败，状态码: {resp_base.status_code}, 响应内容: {resp_base.text}")
                 raise Exception(f"获取基础页面失败，状态码: {resp_base.status_code}")
+
             cookie = resp_base.headers.get("set-cookie")
             logger.info(f"获取Cookie: {cookie}")
 
@@ -114,7 +115,6 @@ def register_email(email):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Accept": "*/*",
                 "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-                # "Accept-Encoding": "gzip, deflate, br",  # 移除 Accept-Encoding
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://www.serv00.com",
@@ -126,12 +126,10 @@ def register_email(email):
                 "Sec-Fetch-Site": "same-origin",
                 "Pragma": "no-cache",
                 "Cache-Control": "no-cache",
-
             }
-            # header_create_account.pop("Accept-Encoding", None)  # 确保移除 Accept-Encoding
 
             logger.info(f"请求URL: {url_create_account}")
-            resp_create_account = session.get(url_create_account, headers=header_create_account,
+            resp_create_account = session.get(url=url_create_account, headers=header_create_account,
                                               impersonate="chrome124")
             logger.info(f"获取 captcha_0 状态码: {resp_create_account.status_code}")
 
@@ -140,11 +138,13 @@ def register_email(email):
                 content_create_account = resp_create_account.text  # 直接使用 text
 
                 try:
-                    content_create_account = eval(content_create_account)
-                    captcha_0 = content_create_account["__captcha_key"]
+                    # 使用字符串操作提取 __captcha_key
+                    start_index = content_create_account.find('"__captcha_key": "') + len('"__captcha_key": "')
+                    end_index = content_create_account.find('"', start_index)
+                    captcha_0 = content_create_account[start_index:end_index]
                     logger.info(f"提取captcha_0成功: {captcha_0}")
 
-                except (KeyError, SyntaxError, TypeError) as e:
+                except Exception as e:
                     logger.error(f"处理响应内容失败：{str(e)}， 原始响应头: {resp_create_account.headers}， 原始响应内容 (前100字符): {resp_create_account.text[:100]}")
                     raise Exception(f"处理响应内容失败：{str(e)}")
             else:
@@ -176,7 +176,7 @@ def register_email(email):
                 logger.info(f"第 {retry + 1} 次尝试获取验证码")
                 try:
                     logger.info(f"请求验证码图片URL: {captcha_url}")
-                    resp_captcha = session.get(captcha_url, headers=header_captcha, impersonate="chrome124")
+                    resp_captcha = session.get(url=captcha_url, headers=header_captcha, impersonate="chrome124")
 
                     logger.info(f"获取验证码图片状态码: {resp_captcha.status_code}")
                     if resp_captcha.status_code != 200:
@@ -218,7 +218,7 @@ def register_email(email):
                     logger.info(f"POST 数据: {data}")
 
                     logger.info(f"请求URL: {url_submit}")
-                    resp_submit = session.post(url_submit, headers=header_submit, data=data,
+                    resp_submit = session.post(url=url_submit, headers=header_submit, data=data,
                                                 impersonate="chrome124")
 
                     logger.info(f"提交注册信息状态码: {resp_submit.status_code}")
