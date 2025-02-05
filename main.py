@@ -10,8 +10,6 @@ from urllib.parse import quote
 from loguru import logger
 import threading
 from faker import Faker
-import brotli
-import gzip
 
 ocr = ddddocr.DdddOcr()
 fake = Faker()
@@ -116,7 +114,7 @@ def register_email(email):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
                 "Accept": "*/*",
                 "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-                #"Accept-Encoding": "gzip, deflate, br",  # 移除 Accept-Encoding
+                # "Accept-Encoding": "gzip, deflate, br",  # 移除 Accept-Encoding
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://www.serv00.com",
@@ -130,7 +128,7 @@ def register_email(email):
                 "Cache-Control": "no-cache",
 
             }
-            header_create_account.pop("Accept-Encoding", None)  # 确保移除 Accept-Encoding
+            # header_create_account.pop("Accept-Encoding", None)  # 确保移除 Accept-Encoding
 
             logger.info(f"请求URL: {url_create_account}")
             resp_create_account = session.get(url_create_account, headers=header_create_account,
@@ -138,36 +136,17 @@ def register_email(email):
             logger.info(f"获取 captcha_0 状态码: {resp_create_account.status_code}")
 
             if resp_create_account.status_code == 200 and resp_create_account.content:
-                content_encoding = resp_create_account.headers.get('Content-Encoding', '')
 
-                if content_encoding:
-                    logger.warning(f"响应使用了 Content-Encoding: {content_encoding}, 但不应该有. ")
-
-                if 'gzip' in content_encoding:
-                    try:
-                        content_create_account = gzip.decompress(resp_create_account.content).decode('utf-8')
-                        logger.info("使用 gzip 解压缩成功")
-                    except Exception as e:
-                        logger.error(f"gzip 解压缩失败: {e}, 响应内容 (前 100 个字符): {resp_create_account.text[:100]}")
-                        raise
-                elif 'br' in content_encoding:
-                    try:
-                        content_create_account = brotli.decompress(resp_create_account.content).decode('utf-8')  # 需要 pip install brotli
-                        logger.info("使用 brotli 解压缩成功")
-                    except Exception as e:
-                        logger.error(f"brotli 解压缩失败: {e}, 响应内容 (前 100 个字符): {resp_create_account.text[:100]}")
-                        raise
-                else:
-                    content_create_account = resp_create_account.text
-                    logger.info("未使用 gzip 或 brotli 压缩")
+                content_create_account = resp_create_account.text  # 直接使用 text
 
                 try:
                     content_create_account = eval(content_create_account)
                     captcha_0 = content_create_account["__captcha_key"]
                     logger.info(f"提取captcha_0成功: {captcha_0}")
+
                 except (KeyError, SyntaxError, TypeError) as e:
-                    logger.error(f"提取captcha_0失败，content: {content_create_account}, 错误信息：{str(e)}")
-                    raise Exception(f"提取captcha_0失败：{str(e)}")
+                    logger.error(f"处理响应内容失败：{str(e)}， 原始响应头: {resp_create_account.headers}， 原始响应内容 (前100字符): {resp_create_account.text[:100]}")
+                    raise Exception(f"处理响应内容失败：{str(e)}")
             else:
                 logger.error(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}, 响应内容为空或错误")
                 raise Exception(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}， 响应内容为空或错误")
