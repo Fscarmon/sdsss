@@ -1,8 +1,8 @@
-requests
-loguru
-faker
-python-telegram-bot
 ddddocr
-fake-headers
-pytz
-PySocks
+fastapi
+uvicorn
+loguru
+curl_cffi
+python-multipart
+brotli
+zstandard
