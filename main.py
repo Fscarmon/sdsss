@@ -140,22 +140,38 @@ def register_email(email):
                     f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}, 响应内容: {resp_create_account.text}")
                 raise Exception(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}")
 
-            # 如果 Accept-Encoding 包括 gzip 或 br, 你可能需要解压缩响应内容
-            if 'gzip' in resp_create_account.headers.get('Content-Encoding', ''):
-                content_create_account = gzip.decompress(resp_create_account.content).decode('utf-8')
-            elif 'br' in resp_create_account.headers.get('Content-Encoding', ''):
-                content_create_account = brotli.decompress(resp_create_account.content).decode('utf-8')  # 需要 pip install brotli
+            content_encoding = resp_create_account.headers.get('Content-Encoding', '')
+
+            if resp_create_account.status_code == 200 and resp_create_account.content:
+
+                if 'gzip' in content_encoding:
+                    try:
+                        content_create_account = gzip.decompress(resp_create_account.content).decode('utf-8')
+                        logger.info("使用 gzip 解压缩成功")
+                    except Exception as e:
+                        logger.error(f"gzip 解压缩失败: {e}")
+                        raise
+                elif 'br' in content_encoding:
+                    try:
+                        content_create_account = brotli.decompress(resp_create_account.content).decode('utf-8')  # 需要 pip install brotli
+                        logger.info("使用 brotli 解压缩成功")
+                    except Exception as e:
+                        logger.error(f"brotli 解压缩失败: {e}")
+                        raise
+                else:
+                    content_create_account = resp_create_account.text
+                    logger.info("未使用 gzip 或 brotli 压缩")
+
+                try:
+                    content_create_account = eval(content_create_account)
+                    captcha_0 = content_create_account["__captcha_key"]
+                    logger.info(f"提取captcha_0成功: {captcha_0}")
+                except (KeyError, SyntaxError, TypeError) as e:
+                    logger.error(f"提取captcha_0失败，content: {content_create_account}, 错误信息：{str(e)}")
+                    raise Exception(f"提取captcha_0失败：{str(e)}")
             else:
-                content_create_account = resp_create_account.text
-
-            try:
-
-                content_create_account = eval(content_create_account)
-                captcha_0 = content_create_account["__captcha_key"]
-                logger.info(f"提取captcha_0成功: {captcha_0}")
-            except (KeyError, IndexError) as e:
-                logger.error(f"提取captcha_0失败，content: {content_create_account}, 错误信息：{str(e)}")
-                raise Exception(f"提取captcha_0失败：{str(e)}")
+                logger.error(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}, 响应内容为空或错误")
+                raise Exception(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}， 响应内容为空或错误")
 
             # 3. 构建验证码图片URL
             captcha_url = f"https://www.serv00.com/captcha/image/{captcha_0}/"
