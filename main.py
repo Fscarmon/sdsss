@@ -33,19 +33,15 @@ class Config:
     def __init__(self):
         self.email_domains = [domain.strip() for domain in os.environ.get("EMAIL_DOMAIN", "").split(';')]
         self.num_emails_per_domain = 20
-        self.proxy_list = os.environ.get("SOCKS", "").split(';') if os.environ.get("SOCKS") else []
+        self.proxy_file = "proxy.txt"
         self.captcha_retries = 5
         self.request_timeout = 10
         self.delay_range = (0.5, 1.2)
+        self.working_proxies = []  # Initialize an empty list for working proxies
 
 config = Config()
 
-def get_random_proxy(proxy_list):
-    if not proxy_list:
-        return None
-    return random.choice(proxy_list)
 
-# --- MOVE THIS FUNCTION DEFINITION HERE ---
 def generate_random_email_prefix(length=20):
     characters = string.ascii_lowercase + string.digits
     return ''.join(random.choice(characters) for _ in range(length))
@@ -71,12 +67,80 @@ def generate_random_username():
     random_string = ''.join(random.choice(characters) for _ in range(length))
     return random_string
 
+def load_proxies(config):
+    """Loads proxies from the SOCKS environment variable and a proxy file, then tests them."""
+    proxies = []
+
+    # Load from SOCKS environment variable
+    socks_env = os.environ.get("SOCKS", "")
+    proxies.extend(socks_env.split(";") if socks_env else [])
+
+    # Load from proxy.txt
+    try:
+        with open(config.proxy_file, "r") as f:
+            proxies.extend(line.strip() for line in f)
+    except FileNotFoundError:
+        logger.warning(f"Proxy file '{config.proxy_file}' not found.")
+
+    # Test and store working proxies
+    test_url = "https://www.google.com"  # Or any reliable URL
+    tested_proxies = test_proxies(proxies, test_url, config.request_timeout)
+    config.working_proxies = tested_proxies
+    logger.info(f"Found {len(config.working_proxies)} working proxies.")
+
+
+
+def test_proxies(proxies, test_url, timeout):
+    """Tests a list of proxies and returns only the working ones."""
+    working_proxies = []
+    for proxy_string in proxies:
+        proxy_string = proxy_string.strip()
+        if not proxy_string:  # Skip empty lines
+            continue
+
+        try:
+            parts = proxy_string.split(":")
+            if len(parts) < 3:
+                logger.warning(f"Invalid proxy format: {proxy_string}")
+                continue
+            ip, port, proxy_type = parts[0], parts[1], parts[2].lower()
+            proxy = f"{proxy_type}://{ip}:{port}"
+
+            proxies_dict = {"http": proxy, "https": proxy} # format the proxy here.
+
+            try:
+                response = requests.get(test_url, proxies=proxies_dict, timeout=timeout)
+                response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+                working_proxies.append(proxy_string)
+                logger.info(f"Proxy {proxy_string} is working.")
+            except requests.RequestException as e:
+                logger.warning(f"Proxy {proxy_string} failed: {e}")
+        except Exception as e:
+             logger.error(f"Proxy testing encountered an error: {e}")
+
+    return working_proxies
+
+def get_random_proxy(working_proxies):
+    """Gets a random, tested proxy from the working proxies list."""
+    if not working_proxies:
+        return None
+    return random.choice(working_proxies)
+
+
 
 def register_email(email, ua, proxy=None):
     try:
         with requests.Session() as session:
             if proxy:
-                session.proxies = {"http": proxy, "https": proxy}
+                parts = proxy.split(":")
+                if len(parts) < 3:
+                    logger.warning(f"Invalid proxy format: {proxy}")
+                    return
+
+                ip, port, proxy_type = parts[0], parts[1], parts[2].lower()
+                formatted_proxy = f"{proxy_type}://{ip}:{port}"
+                session.proxies = {"http": formatted_proxy, "https": formatted_proxy}
+
                 logger.info(f"Using proxy: {proxy}")
 
             header_base = {
@@ -240,7 +304,7 @@ def worker(config):
             break
 
         ua = random.choice(USER_AGENTS)
-        proxy = get_random_proxy(config.proxy_list)
+        proxy = get_random_proxy(config.working_proxies)
         logger.info(f"Thread {threading.current_thread().name} using User-Agent: {ua}, email: {email}, proxy: {proxy}")
 
         try:
@@ -255,7 +319,9 @@ def main():
     """Main function."""
 
     logger.info(f"Using email suffixes: {config.email_domains}")
-    logger.info(f"Using Proxies: {config.proxy_list}")
+    load_proxies(config) # Load and test proxies here
+    logger.info(f"Using Proxies: {config.working_proxies}")
+
 
     # Populate email queue
     for email_domain in config.email_domains:
