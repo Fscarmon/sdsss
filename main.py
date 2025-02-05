@@ -18,6 +18,115 @@ from urllib.parse import quote, urlparse, parse_qs, urlencode
 from fake_headers import Headers
 from requests.exceptions import JSONDecodeError
 
+os.makedirs("static", exist_ok=True)
+config_file = 'static/config.json'
+
+def get_user_name():
+    url = "https://www.ivtool.com/random-name-generater/uinames/api/index.php?region=united%20states&gender=male&amount=5&="
+    resp = requests.get(url, verify=False)
+    if resp.status_code != 200:
+        print(resp.status_code, resp.text)
+        raise Exception("获取名字出错")
+    data = resp.json()
+    return data
+
+def generate_random_username():
+    length = random.randint(7, 10)
+    characters = string.ascii_letters
+    random_string = ''.join(random.choice(characters) for _ in range(length))
+    return random_string
+
+def generate_random_email(domain):
+    length = random.randint(7, 10)
+    characters = string.ascii_lowercase + string.digits
+    username = ''.join(random.choice(characters) for _ in range(length))
+    return f"{username}@{domain}"
+
+def generate_random_headers():
+    return {
+        "Accept-Language": random.choice(["en-US,en;q=0.9", "ja-JP,ja;q=0.9", "fr-FR,fr;q=0.9", "de-DE,de;q=0.9", "es-ES,es;q=0.9"]),
+        "User-Agent": Headers(os="random").generate()["User-Agent"],
+        "X-Forwarded-For": Faker().ipv4(),
+        "X-Network-Type": random.choice(["Wi-Fi", "4G", "5G"]),
+        "X-Timezone": random.choice(pytz.all_timezones)
+    }
+
+def generate_random_data():
+    screen_resolution = f"{random.choice([1280, 1366, 1440, 1600, 1920])}x{random.choice([720, 768, 900, 1080, 1200])}"
+    fonts = ["Arial", "Times New Roman", "Verdana", "Helvetica", "Georgia", "Courier New"]
+    webgl_info = {
+        "vendor": random.choice(["Google Inc. (NVIDIA)", "Intel Inc.", "AMD Inc."]),
+        "renderer": random.choice([
+            "ANGLE (NVIDIA, NVIDIA GeForce GTX 1080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "Intel(R) HD Graphics 630", "AMD Radeon RX 580", "NVIDIA GeForce RTX 3090"
+        ])
+    }
+    return {
+        "screen_resolution": screen_resolution,
+        "color_depth": random.choice([16, 24, 32]),
+        "fonts": random.sample(fonts, k=random.randint(3, len(fonts))),
+        "webgl_info": webgl_info,
+        "canvas_fingerprint": hashlib.md5(os.urandom(16)).hexdigest(),
+        "plugins": random.sample(["Chrome PDF Viewer", "Google Docs Offline", "AdBlock"], k=random.randint(2, 3))
+    }
+
+async def send_message(message, tg_token, tg_chat_id):
+    try:
+        bot = Bot(token=tg_token)
+        await bot.send_message(chat_id=tg_chat_id, text=message)
+    except Exception as e:
+        logger.error(f"发送失败: {e}")
+
+def parse_socks_string(socks_str):
+    if socks_str.startswith("https://t.me/socks?"):
+        parsed_url = urlparse(socks_str)
+        query_params = parse_qs(parsed_url.query)
+        server = query_params.get('server', [''])[0]
+        port = query_params.get('port', [''])[0]
+        user = query_params.get('user', [''])[0]
+        password = query_params.get('pass', [''])[0]
+        if server and port and user and password:
+           return f"socks5://{user}:{password}@{server}:{port}"
+    return socks_str
+
+def get_proxy_settings():
+    socks_env = os.environ.get("SOCKS", "")
+    socks_proxies = None
+    if socks_env:
+        socks_str = parse_socks_string(socks_env)
+        try:
+            if socks_str.startswith("socks5://"):
+                 socks_proxies = {
+                    "http": socks_str,
+                    "https": socks_str
+                 }
+            elif socks_str.startswith("https://"):
+                 match = re.match(r'https://(?:([^:]+):([^@]+)@)?([^:]+):(\d+)', socks_str)
+                 if match:
+                    user, password, host, port = match.groups()
+                    if user and password:
+                        socks_proxies = {
+                         "http": f"https://{user}:{password}@{host}:{port}",
+                         "https": f"https://{user}:{password}@{host}:{port}"
+                          }
+                    else:
+                       socks_proxies = {
+                         "http": f"https://{host}:{port}",
+                         "https": f"https://{host}:{port}"
+                        }
+                 else:
+                     socks_proxies = {
+                         "http": socks_str,
+                         "https": socks_str
+                    }
+            else:
+                logger.warning("SOCKS 环境变量格式不正确，请检查")
+        except ValueError as e:
+             logger.error(f"SOCKS 环境变量格式错误: {e}")
+    else:
+        logger.info("SOCKS 环境变量未设置，将不使用代理")
+    return socks_proxies
+
 def start_task(email_domains, num_emails):
     max_captcha_retries = int(os.environ.get("MAX_CAPTCHA_RETRIES", 5))
     max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10))
@@ -156,7 +265,6 @@ def start_task(email_domains, num_emails):
                 if email_retry_count >= max_email_retries:
                     logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 跳过该邮箱")
                     break
-
 
 if __name__ == "__main__":
     os.system("cls" if os.name == "nt" else "clear")
