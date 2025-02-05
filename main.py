@@ -31,12 +31,16 @@ def get_user_name():
         "Sec-Fetch-User": "?1",
         "Priority": "u=1",
     }
+    logger.info(f"请求URL: {url}") # 记录请求URL
     resp = requests.get(url, headers=header, verify=False)
-    print(resp.status_code)
+    logger.info(f"获取名字状态码: {resp.status_code}") # 记录状态码
+
     if resp.status_code != 200:
-        print(resp.status_code, resp.text)
-        raise "获取名字出错"
+        logger.error(f"获取名字失败，状态码: {resp.status_code}, 响应内容: {resp.text}")
+        raise Exception(f"获取名字出错，状态码: {resp.status_code}")
+
     data = resp.json()
+    logger.info(f"获取名字成功: {data}") # 记录返回数据
     return data
 
 
@@ -74,7 +78,11 @@ def background_task():
 
 
 def register_email(email):
-    usernames = get_user_name()
+    try:
+        usernames = get_user_name()
+    except Exception as e:
+        logger.error(f"获取用户名失败: {e}")
+        return # 如果获取用户名失败，直接返回
     url1 = "https://www.serv00.com/offer/create_new_account"
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
@@ -136,30 +144,54 @@ def register_email(email):
     logger.info(f"{email} {first_name} {last_name} {username}")
 
     with requests.Session() as session:
-        logger.info("获取网页信息")
+        logger.info(f"请求URL: {url1}") # 记录请求URL
         resp = session.get(url=url1, headers=header1, impersonate="chrome124")
-        print(resp.status_code)
+        logger.info(f"获取网页信息状态码: {resp.status_code}")  # 记录状态码
+        if resp.status_code != 200:
+            logger.error(f"获取网页信息失败，状态码: {resp.status_code}, 响应内容: {resp.text}")
+            raise Exception(f"获取网页信息失败，状态码: {resp.status_code}")
+
         headers = resp.headers
         content = resp.text
 
-        csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
-        print("csrftoken", csrftoken)
+        try:
+            csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
+            logger.info(f"提取csrftoken成功: {csrftoken}") # 记录提取的csrftoken
+        except IndexError:
+             logger.error(f"提取csrftoken失败，headers: {headers}")
+             raise Exception("提取csrftoken失败")
+
         header2["Cookie"] = header2["Cookie"].format(csrftoken)
         header3["Cookie"] = header3["Cookie"].format(csrftoken)
 
-        captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
+        try:
+            captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
+            logger.info(f"提取captcha_0成功: {captcha_0}") # 记录提取的captcha_0
+        except IndexError:
+            logger.error(f"提取captcha_0失败，content: {content}")
+            raise Exception("提取captcha_0失败")
+
 
         for retry in range(5):
             time.sleep(random.uniform(0.5, 1.2))
             logger.info(f"第 {retry + 1} 次尝试获取验证码")
             try:
-                resp = session.get(url=captcha_url.format(captcha_0),
+                captcha_url_formatted = captcha_url.format(captcha_0)
+                logger.info(f"请求验证码图片URL: {captcha_url_formatted}") # 记录验证码图片URL
+                resp = session.get(url=captcha_url_formatted,
                                  headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), impersonate="chrome124")
+
+                logger.info(f"获取验证码图片状态码: {resp.status_code}")  # 记录状态码
+                if resp.status_code != 200:
+                    logger.error(f"获取验证码图片失败，状态码: {resp.status_code}, 响应内容: {resp.text}")
+                    raise Exception(f"获取验证码图片失败，状态码: {resp.status_code}")
+
                 content = resp.content
                 with open("static/image.jpg", "wb") as f:
                     f.write(content)
 
                 captcha_1 = ocr.classification(content).lower()
+                logger.info(f"OCR识别结果: {captcha_1}")
 
                 if not bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
                     logger.warning(f"识别的验证码无效: {captcha_1}, 重试")
@@ -168,13 +200,21 @@ def register_email(email):
                 logger.info(f"识别的验证码: {captcha_1}")
 
                 data = f"csrfmiddlewaretoken={csrftoken}&first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=0&tos=on"
+                logger.info(f"POST 数据: {data}") # 记录POST数据
                 time.sleep(random.uniform(0.5, 1.2))
                 logger.info("请求信息")
+                logger.info(f"请求URL: {url3}")  # 记录请求URL
                 resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}),
                                     data=data, impersonate="chrome124")
-                print(resp.status_code)
+
+                logger.info(f"提交注册信息状态码: {resp.status_code}") # 记录状态码
+                if resp.status_code != 200:
+                     logger.error(f"提交注册信息失败，状态码: {resp.status_code}, 响应内容: {resp.text}")
+                     raise Exception(f"提交注册信息失败，状态码: {resp.status_code}")
+
                 print(resp.text)
                 content = resp.json()
+                logger.info(f"提交注册信息响应: {content}")
 
                 if content.get("captcha") and content["captcha"][0] == "Invalid CAPTCHA":
                     captcha_0 = content["__captcha_key"]
