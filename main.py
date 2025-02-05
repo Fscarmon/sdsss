@@ -12,7 +12,7 @@ from faker import Faker
 from PIL import Image
 import io
 from queue import Queue
-import concurrent.futures  # Import for ThreadPoolExecutor
+import concurrent.futures
 
 ocr = ddddocr.DdddOcr()
 fake = Faker()
@@ -29,38 +29,60 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0",
 ]
 
-# --- ADDED CONFIGURATION CLASS ---
 class Config:
     def __init__(self):
         self.email_domains = [domain.strip() for domain in os.environ.get("EMAIL_DOMAIN", "").split(';')]
         self.num_emails_per_domain = 20
-        self.proxy_list = os.environ.get("SOCKS", "").split(';') if os.environ.get("SOCKS") else []  # Changed to SOCKS
+        self.proxy_list = os.environ.get("SOCKS", "").split(';') if os.environ.get("SOCKS") else []
         self.captcha_retries = 5
-        self.request_timeout = 10  # seconds
-        self.delay_range = (0.5, 1.2) # seconds
-        # Add other configuration parameters here
+        self.request_timeout = 10
+        self.delay_range = (0.5, 1.2)
 
 config = Config()
 
 def get_random_proxy(proxy_list):
-    """Gets a random proxy from the list.  Handles empty list."""
     if not proxy_list:
         return None
     return random.choice(proxy_list)
 
-def register_email(email, ua, proxy=None):  # ADDED PROXY PARAMETER
-    """Registers an email with optional proxy."""
+# --- MOVE THIS FUNCTION DEFINITION HERE ---
+def generate_random_email_prefix(length=20):
+    characters = string.ascii_lowercase + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))
+
+def get_user_name():
+    names = []
+    for _ in range(5):
+        try:
+            name = fake.name()
+            first_name = name.split(" ")[0]
+            last_name = name.split(" ")[-1]
+            names.append({"name": first_name, "surname": last_name})
+        except Exception as e:
+            logger.error(f"生成随机姓名失败: {e}")
+            first_name = random.choice(["Alice", "Bob"])
+            last_name = random.choice(["Smith", "Jones"])
+            names.append({"name": first_name, "surname": last_name})
+    return names
+
+def generate_random_username():
+    length = random.randint(7, 10)
+    characters = string.ascii_letters
+    random_string = ''.join(random.choice(characters) for _ in range(length))
+    return random_string
+
+
+def register_email(email, ua, proxy=None):
     try:
         with requests.Session() as session:
-            # --- PROXY SETTING ---
             if proxy:
-                session.proxies = {"http": proxy, "https": proxy}  # Use the same proxy for both
+                session.proxies = {"http": proxy, "https": proxy}
                 logger.info(f"Using proxy: {proxy}")
 
             header_base = {
                 "User-Agent": ua,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q;0.2",
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
                 "Sec-Fetch-Dest": "document",
@@ -103,7 +125,7 @@ def register_email(email, ua, proxy=None):  # ADDED PROXY PARAMETER
                 "Host": "www.serv00.com",
                 "User-Agent": ua,
                 "Accept": "*/*",
-                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q;0.2",
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://www.serv00.com",
@@ -211,24 +233,23 @@ def register_email(email, ua, proxy=None):  # ADDED PROXY PARAMETER
         logger.error(f"Failed to get cookie or captcha_0: {e}")
         return
 
-
-def worker(config):  # Added config parameter
-    """Worker function to register emails."""
+def worker(config):
     while True:
         email = EMAIL_QUEUE.get()
         if email is None:
             break
 
         ua = random.choice(USER_AGENTS)
-        proxy = get_random_proxy(config.proxy_list)  # Get proxy here
+        proxy = get_random_proxy(config.proxy_list)
         logger.info(f"Thread {threading.current_thread().name} using User-Agent: {ua}, email: {email}, proxy: {proxy}")
 
         try:
-            register_email(email, ua, proxy)  # Pass proxy to register_email
+            register_email(email, ua, proxy)
         except Exception as e:
             logger.error(f"Thread {threading.current_thread().name} failed to register email {email}: {e}")
         finally:
             EMAIL_QUEUE.task_done()
+
 
 def main():
     """Main function."""
@@ -247,7 +268,7 @@ def main():
     # Use ThreadPoolExecutor for simpler thread management
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_THREADS) as executor:
         for _ in range(NUM_THREADS):
-            executor.submit(worker, config)  # Pass config
+            executor.submit(worker, config)
 
     EMAIL_QUEUE.join()
     logger.info("All threads completed, exiting")
