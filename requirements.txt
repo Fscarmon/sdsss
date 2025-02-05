@@ -8,3 +8,4 @@ brotli
 zstandard
 faker
 opencv-python
+PySocks
