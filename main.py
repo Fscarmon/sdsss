@@ -10,6 +10,8 @@ from urllib.parse import quote
 from loguru import logger
 import threading
 from faker import Faker
+import brotli
+import gzip
 
 ocr = ddddocr.DdddOcr()
 fake = Faker()
@@ -70,32 +72,30 @@ def background_task():
 def register_email(email):
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-    # 1. 获取 cookie
-    url_base = "https://www.serv00.com"
-    header_base = {
-        "User-Agent": ua,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Priority": "u=1",
-    }
-
-    logger.info(f"请求URL: {url_base}")  # 记录请求URL
     try:
-        with requests.Session() as session:  # 使用Session 管理cookie
+        with requests.Session() as session:
+
+            header_base = {  # 获取cookie
+                "User-Agent": ua,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Priority": "u=1",
+            }
+            url_base = "https://www.serv00.com"
+            logger.info(f"请求URL: {url_base}")
             resp_base = session.get(url_base, headers=header_base, impersonate="chrome124")
-            logger.info(f"获取基础页面状态码: {resp_base.status_code}")  # 记录状态码
+            logger.info(f"获取基础页面状态码: {resp_base.status_code}")
+
             if resp_base.status_code != 200:
                 logger.error(f"获取基础页面失败，状态码: {resp_base.status_code}, 响应内容: {resp_base.text}")
                 raise Exception(f"获取基础页面失败，状态码: {resp_base.status_code}")
-
-            headers_base = resp_base.headers
-            cookie = headers_base.get("set-cookie")
+            cookie = resp_base.headers.get("set-cookie")
             logger.info(f"获取Cookie: {cookie}")
 
             try:
@@ -110,43 +110,52 @@ def register_email(email):
             username = generate_random_username().lower()
             logger.info(f"{email} {first_name} {last_name} {username}")
 
-            # 2. 获取 captcha_0
             url_create_account = "https://www.serv00.com/offer/create_new_account.json"
-            header_create_account = {
+            header_create_account = {  # 替换成你浏览器复制的header
                 "Host": "www.serv00.com",
-                "User-Agent": ua,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
                 "Accept": "*/*",
                 "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+                "Accept-Encoding": "gzip, deflate, br",
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://www.serv00.com",
                 "Connection": "keep-alive",
                 "Referer": "https://www.serv00.com/offer/create_new_account",
-                "Cookie": cookie,  # 使用获取的 cookie
+                "Cookie": cookie,
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin",
-                "Priority": "u=1",
-            }
+                "Pragma": "no-cache",
+                "Cache-Control": "no-cache",
 
+            }
             logger.info(f"请求URL: {url_create_account}")
             resp_create_account = session.get(url_create_account, headers=header_create_account,
                                               impersonate="chrome124")
             logger.info(f"获取 captcha_0 状态码: {resp_create_account.status_code}")
+
             if resp_create_account.status_code != 200:
                 logger.error(
                     f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}, 响应内容: {resp_create_account.text}")
                 raise Exception(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}")
 
-            content_create_account = resp_create_account.json()
-            logger.info(f"获取 captcha_0 响应: {content_create_account}")
+            # 如果 Accept-Encoding 包括 gzip 或 br, 你可能需要解压缩响应内容
+            if 'gzip' in resp_create_account.headers.get('Content-Encoding', ''):
+                content_create_account = gzip.decompress(resp_create_account.content).decode('utf-8')
+            elif 'br' in resp_create_account.headers.get('Content-Encoding', ''):
+                content_create_account = brotli.decompress(resp_create_account.content).decode('utf-8')  # 需要 pip install brotli
+            else:
+                content_create_account = resp_create_account.text
 
             try:
+
+                content_create_account = eval(content_create_account)
                 captcha_0 = content_create_account["__captcha_key"]
                 logger.info(f"提取captcha_0成功: {captcha_0}")
-            except (KeyError, IndexError):
-                logger.error(f"提取captcha_0失败，content: {content_create_account}")
-                raise Exception("提取captcha_0失败")
+            except (KeyError, IndexError) as e:
+                logger.error(f"提取captcha_0失败，content: {content_create_account}, 错误信息：{str(e)}")
+                raise Exception(f"提取captcha_0失败：{str(e)}")
 
             # 3. 构建验证码图片URL
             captcha_url = f"https://www.serv00.com/captcha/image/{captcha_0}/"
