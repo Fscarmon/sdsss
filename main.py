@@ -13,11 +13,24 @@ import brotli
 import gzip
 from PIL import Image  # Import Pillow (PIL) for image processing
 import io
+from queue import Queue
 
 ocr = ddddocr.DdddOcr()
 fake = Faker()
 
 os.makedirs("static", exist_ok=True)
+
+NUM_THREADS = 50  # 线程数量
+EMAIL_QUEUE = Queue() # 邮箱队列
+
+# User-Agent 列表，可以根据需要扩充
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0",
+    # ... 更多 User-Agent
+]
 
 
 def get_user_name():
@@ -49,33 +62,10 @@ def generate_random_email_prefix(length=20):
     return ''.join(random.choice(characters) for _ in range(length))
 
 
-def background_task():
-    email_domains_str = os.environ.get("EMAIL_DOMAIN")
-    if not email_domains_str:
-        logger.error("EMAIL_DOMAIN 环境变量未设置")
-        return
-
-    email_domains = [domain.strip() for domain in email_domains_str.split(';')]
-    logger.info(f"使用邮箱后缀: {email_domains}")
-
-    for email_domain in email_domains:
-        for _ in range(20):
-            email_prefix = generate_random_email_prefix()
-            email = f"{email_prefix}@{email_domain}"
-            logger.info(f"开始注册邮箱: {email}")
-            try:
-                register_email(email)  # 移动到 try 块内
-            except Exception as e:
-                logger.error(f"注册邮箱 {email} 失败: {e}")
-                continue
-
-
-def register_email(email):
-    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-
+def register_email(email, ua):
+    """注册邮箱，传入邮箱地址和 User-Agent"""
     try:
         with requests.Session() as session:
-
             header_base = {  # 获取cookie
                 "User-Agent": ua,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -120,7 +110,7 @@ def register_email(email):
             url_create_account = "https://www.serv00.com/offer/create_new_account.json"
             header_create_account = {  # 替换成你浏览器复制的header
                 "Host": "www.serv00.com",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+                "User-Agent": ua,
                 "Accept": "*/*",
                 "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -240,12 +230,58 @@ def register_email(email):
         logger.error(f"获取 cookie 或 captcha_0 失败: {e}")
         return
 
+def worker():
+    """线程 worker 函数，从队列中获取邮箱并进行注册"""
+    while True:
+        email = EMAIL_QUEUE.get()  # 从队列中获取邮箱
+        if email is None:
+            break  # 如果队列为空，则退出线程
+
+        ua = random.choice(USER_AGENTS)  # 为当前线程随机选择一个 User-Agent
+        logger.info(f"线程 {threading.current_thread().name} 使用 User-Agent: {ua}，开始注册邮箱: {email}")
+        try:
+            register_email(email, ua)  # 调用注册邮箱函数，传入邮箱和 User-Agent
+        except Exception as e:
+            logger.error(f"线程 {threading.current_thread().name} 注册邮箱 {email} 失败: {e}")
+        finally:
+            EMAIL_QUEUE.task_done() # 标记任务完成
+
+def main():
+    """主函数，负责初始化邮箱队列和启动线程"""
+    email_domains_str = os.environ.get("EMAIL_DOMAIN")
+    if not email_domains_str:
+        logger.error("EMAIL_DOMAIN 环境变量未设置")
+        return
+
+    email_domains = [domain.strip() for domain in email_domains_str.split(';')]
+    logger.info(f"使用邮箱后缀: {email_domains}")
+
+    # 填充邮箱队列
+    for email_domain in email_domains:
+        for _ in range(20): #原来是20
+            email_prefix = generate_random_email_prefix()
+            email = f"{email_prefix}@{email_domain}"
+            EMAIL_QUEUE.put(email)
+
+    # 启动多个线程
+    threads = []
+    for i in range(NUM_THREADS):
+        t = threading.Thread(target=worker, name=f"Thread-{i+1}")
+        t.daemon = True  # 设置为守护线程
+        threads.append(t)
+        t.start()
+
+    # 等待队列中的所有任务完成
+    EMAIL_QUEUE.join()
+
+    # 停止 worker 线程
+    for _ in range(NUM_THREADS):
+        EMAIL_QUEUE.put(None)
+
+    for t in threads:
+        t.join()
+    logger.info("所有线程完成任务，程序退出")
+
 
 if __name__ == '__main__':
-    # 直接启动后台任务
-    task_thread = threading.Thread(target=background_task)
-    task_thread.daemon = True  # 设置为守护线程，主线程退出时自动退出
-    task_thread.start()
-
-    while True:  # 保持主线程运行
-        time.sleep(1)  # 防止 CPU 占用过高
+    main()  # 启动主函数
