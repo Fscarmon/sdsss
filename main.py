@@ -139,6 +139,7 @@ def register_email(email):
 
             if resp_create_account.status_code == 200 and resp_create_account.content:
                 content_create_account = resp_create_account.text
+               
                 try:
                     content_create_account = eval(content_create_account)
                     captcha_0 = content_create_account["__captcha_key"]
