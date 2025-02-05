@@ -108,13 +108,14 @@ def test_proxies(proxies, test_url, timeout):
 
             proxies_dict = {"http": proxy, "https": proxy} # format the proxy here.
 
-            try:
-                response = requests.get(test_url, proxies=proxies_dict, timeout=timeout)
-                response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-                working_proxies.append(proxy_string)
-                logger.info(f"Proxy {proxy_string} is working.")
-            except requests.RequestException as e:
-                logger.warning(f"Proxy {proxy_string} failed: {e}")
+            response = requests.get(test_url, proxies=proxies_dict, timeout=timeout)
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            working_proxies.append(proxy_string)
+            logger.info(f"Proxy {proxy_string} is working.")
+
+        except requests.errors.RequestsError as e:
+            logger.warning(f"Proxy {proxy_string} failed: {e}")  # Changed Exception Class
+
         except Exception as e:
              logger.error(f"Proxy testing encountered an error: {e}")
 
@@ -160,7 +161,7 @@ def register_email(email, ua, proxy=None):
             try:
                 resp_base = session.get(url_base, headers=header_base, impersonate="chrome124", timeout=config.request_timeout)
                 resp_base.raise_for_status()
-            except requests.RequestException as e:
+            except requests.errors.RequestsError as e: # changed here too
                 logger.error(f"Failed to get base page: {e}")
                 return
 
@@ -208,7 +209,7 @@ def register_email(email, ua, proxy=None):
                 resp_create_account = session.get(url_create_account, headers=header_create_account,
                                                   impersonate="chrome124", timeout=config.request_timeout)
                 resp_create_account.raise_for_status()
-            except requests.RequestException as e:
+            except requests.errors.RequestsError as e: # and here.
                 logger.error(f"Failed to get captcha_0: {e}")
                 return
 
