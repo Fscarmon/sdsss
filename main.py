@@ -147,7 +147,7 @@ class ProxyHandler:
 class Config:
     def __init__(self):
         self.email_domains = [domain.strip() for domain in os.environ.get("EMAIL_DOMAIN", "").split(';')]
-        self.num_emails_per_domain = 20
+        self.num_emails_per_domain = 100
         self.proxy_file = "proxy.txt"
         self.captcha_retries = 5
         self.request_timeout = 10
