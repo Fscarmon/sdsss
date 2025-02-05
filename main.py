@@ -116,7 +116,7 @@ def register_email(email):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
                 "Accept": "*/*",
                 "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-                "Accept-Encoding": "gzip, deflate, br",
+                #"Accept-Encoding": "gzip, deflate, br",  # 移除 Accept-Encoding
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://www.serv00.com",
@@ -130,33 +130,32 @@ def register_email(email):
                 "Cache-Control": "no-cache",
 
             }
+            header_create_account.pop("Accept-Encoding", None)  # 确保移除 Accept-Encoding
+
             logger.info(f"请求URL: {url_create_account}")
             resp_create_account = session.get(url_create_account, headers=header_create_account,
                                               impersonate="chrome124")
             logger.info(f"获取 captcha_0 状态码: {resp_create_account.status_code}")
 
-            if resp_create_account.status_code != 200:
-                logger.error(
-                    f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}, 响应内容: {resp_create_account.text}")
-                raise Exception(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}")
-
-            content_encoding = resp_create_account.headers.get('Content-Encoding', '')
-
             if resp_create_account.status_code == 200 and resp_create_account.content:
+                content_encoding = resp_create_account.headers.get('Content-Encoding', '')
+
+                if content_encoding:
+                    logger.warning(f"响应使用了 Content-Encoding: {content_encoding}, 但不应该有. ")
 
                 if 'gzip' in content_encoding:
                     try:
                         content_create_account = gzip.decompress(resp_create_account.content).decode('utf-8')
                         logger.info("使用 gzip 解压缩成功")
                     except Exception as e:
-                        logger.error(f"gzip 解压缩失败: {e}")
+                        logger.error(f"gzip 解压缩失败: {e}, 响应内容 (前 100 个字符): {resp_create_account.text[:100]}")
                         raise
                 elif 'br' in content_encoding:
                     try:
                         content_create_account = brotli.decompress(resp_create_account.content).decode('utf-8')  # 需要 pip install brotli
                         logger.info("使用 brotli 解压缩成功")
                     except Exception as e:
-                        logger.error(f"brotli 解压缩失败: {e}")
+                        logger.error(f"brotli 解压缩失败: {e}, 响应内容 (前 100 个字符): {resp_create_account.text[:100]}")
                         raise
                 else:
                     content_create_account = resp_create_account.text
