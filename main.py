@@ -70,7 +70,7 @@ def background_task():
 def register_email(email):
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-    # 1. 从 https://www.serv00.com 获取 csrftoken 和 cookie
+    # 1. 从 https://www.serv00.com 获取 cookie
     url_base = "https://www.serv00.com"
     header_base = {
         "User-Agent": ua,
@@ -211,7 +211,7 @@ def register_email(email):
 
                     logger.info(f"识别的验证码: {captcha_1}")
 
-                    data = f"csrfmiddlewaretoken={""}&first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=0&tos=on"
+                    data = f"csrfmiddlewaretoken=&first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=0&tos=on"
                     logger.info(f"POST 数据: {data}")  # 记录POST数据
                     time.sleep(random.uniform(0.5, 1.2))
                     logger.info("请求信息")
@@ -244,7 +244,7 @@ def register_email(email):
             os.remove("static/image.jpg")
 
     except Exception as e:
-        logger.error(f"获取 csrftoken 和 cookie 失败: {e}")
+        logger.error(f"获取 cookie 失败: {e}")
         return
 
 
