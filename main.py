@@ -208,7 +208,7 @@ def load_proxies(config):
     config.working_proxies = ProxyHandler.test_proxies(proxies)
     logger.info(f"Found {len(config.working_proxies)} working proxies")
 
-def register_email(email, ua, proxy=None):
+def register_email(email, ua, config, proxy=None):  # 添加 config 参数
     """注册邮箱的主要逻辑"""
     try:
         with requests.Session() as session:
@@ -395,12 +395,11 @@ def worker(config):
         logger.info(f"Thread {threading.current_thread().name} using User-Agent: {ua}, email: {email}, proxy: {proxy}")
 
         try:
-            register_email(email, ua, proxy)
+            register_email(email, ua, config, proxy)  # 传入 config 参数
         except Exception as e:
             logger.error(f"Thread {threading.current_thread().name} failed to register email {email}: {e}")
         finally:
             EMAIL_QUEUE.task_done()
-
 def main():
     """主函数"""
     # 初始化配置
