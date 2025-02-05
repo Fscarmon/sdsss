@@ -161,7 +161,7 @@ def start_task(email_domains, num_emails):
 
                         # 获取csrftoken
                         logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{id_retry}\033[0m.")
-                        url1 = "https://www.serv00.com/offer/create_new_account"
+                        url1 = "https://www.serv00.com"
                         resp = session.get(url=url1, headers={"User-Agent": User_Agent, **random_headers}, verify=False)
                         headers = resp.headers
                         csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
