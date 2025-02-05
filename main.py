@@ -116,6 +116,7 @@ def register_email(email):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
                 "Accept": "*/*",
                 "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+                #"Accept-Encoding": "gzip, deflate, br",  # 移除 Accept-Encoding
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": "https://www.serv00.com",
@@ -136,153 +137,120 @@ def register_email(email):
                                               impersonate="chrome124", allow_redirects=False) # disable redirects
             logger.info(f"获取 captcha_0 状态码: {resp_create_account.status_code}")
 
-            content_create_account = None # 初始化变量
-            try:
-                if resp_create_account.status_code == 200 and resp_create_account.content:
-                    content_encoding = resp_create_account.headers.get('Content-Encoding', '')
+            if resp_create_account.status_code == 200 and resp_create_account.content:
 
-                    if content_encoding:
-                        logger.warning(f"响应使用了 Content-Encoding: {content_encoding}, 但不应该有. ")
+                content_create_account = resp_create_account.text
+                logger.info("未使用 gzip 或 brotli 压缩")
 
-                    if 'gzip' in content_encoding:
-                        try:
-                            content_create_account = gzip.decompress(resp_create_account.content).decode('utf-8')
-                            logger.info("使用 gzip 解压缩成功")
-                        except Exception as e:
-                            logger.error(f"gzip 解压缩失败: {e}, 响应内容 (前 100 个字符): {resp_create_account.text[:100]}")
-
-                    elif 'br' in content_encoding:
-                        try:
-                            content_create_account = brotli.decompress(resp_create_account.content).decode('utf-8')  # 需要 pip install brotli
-                            logger.info("使用 brotli 解压缩成功")
-                        except Exception as e:
-                            logger.error(f"brotli 解压缩失败: {e}, 响应内容 (前 100 个字符): {resp_create_account.text[:100]}")
-                    else:
-                        content_create_account = resp_create_account.text
-                        logger.info("未使用 gzip 或 brotli 压缩")
-
-
-                    if content_create_account:
-                        try:
-                            content_create_account = eval(content_create_account)
-                            captcha_0 = content_create_account["__captcha_key"]
-                            logger.info(f"提取captcha_0成功: {captcha_0}")
-                        except (KeyError, SyntaxError, TypeError) as e:
-                             logger.error(f"eval解析content失败，content: {content_create_account}, 错误信息：{str(e)}")
-                             #如果eval失败，走正则提取
-                             captcha_0_match = re.search(r'"__captcha_key":\s*"([^"]+)"', resp_create_account.text[:100])
-                             if captcha_0_match:
-                                 captcha_0 = captcha_0_match.group(1)
-                                 logger.info(f"正则提取captcha_0成功: {captcha_0}")
-                             else:
-                                 logger.error(f"正则提取captcha_0失败")
-                                 raise Exception(f"提取captcha_0失败：{str(e)}")
-                    else:
-                        raise Exception(f"解压后内容为空")
-
-                else:
-                    logger.error(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}, 响应内容为空或错误")
-                    raise Exception(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}， 响应内容为空或错误")
-
-
-                # 3. 构建验证码图片URL
-                captcha_url = f"https://www.serv00.com/captcha/image/{captcha_0}/"
-                logger.info(f"验证码图片URL: {captcha_url}")
-
-                header_captcha = {
-                    "Host": "www.serv00.com",
-                    "User-Agent": ua,
-                    "Accept": "image/avif,image/webp,*/*",
-                    "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-                    "Sec-GPC": "1",
-                    "Connection": "keep-alive",
-                    "Referer": "https://www.serv00.com/offer/create_new_account",
-                    "Cookie": cookie,  # 使用获取的 cookie
-                    "Sec-Fetch-Dest": "image",
-                    "Sec-Fetch-Mode": "no-cors",
-                    "Sec-Fetch-Site": "same-origin",
-                    "Priority": "u=4",
-                    "TE": "trailers",
-                }
-
-                for retry in range(5):
-                    time.sleep(random.uniform(0.5, 1.2))
-                    logger.info(f"第 {retry + 1} 次尝试获取验证码")
-                    try:
-                        logger.info(f"请求验证码图片URL: {captcha_url}")
-                        resp_captcha = session.get(captcha_url, headers=header_captcha, impersonate="chrome124", allow_redirects=False)
-
-                        logger.info(f"获取验证码图片状态码: {resp_captcha.status_code}")
-                        if resp_captcha.status_code != 200:
-                            logger.error(f"获取验证码图片失败，状态码: {resp_captcha.status_code}, 响应内容: {resp_captcha.text}")
-                            raise Exception(f"获取验证码图片失败，状态码: {resp_captcha.status_code}")
-
-                        content_captcha = resp_captcha.content
-                        with open("static/image.jpg", "wb") as f:
-                            f.write(content_captcha)
-
-                        captcha_1 = ocr.classification(content_captcha).lower()
-                        logger.info(f"OCR识别结果: {captcha_1}")
-
-                        if not bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
-                            logger.warning(f"识别的验证码无效: {captcha_1}, 重试")
-                            continue
-
-                        logger.info(f"识别的验证码: {captcha_1}")
-
-                        # 4. 构建并提交表单数据
-                        url_submit = "https://www.serv00.com/offer/create_new_account.json"
-                        header_submit = {
-                            "Host": "www.serv00.com",
-                            "User-Agent": ua,
-                            "Accept": "*/*",
-                            "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
-                            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                            "X-Requested-With": "XMLHttpRequest",
-                            "Origin": "https://www.serv00.com",
-                            "Connection": "keep-alive",
-                            "Referer": "https://www.serv00.com/offer/create_new_account",
-                            "Cookie": cookie,
-                            "Sec-Fetch-Dest": "empty",
-                            "Sec-Fetch-Mode": "cors",
-                            "Sec-Fetch-Site": "same-origin",
-                            "Priority": "u=1",
-                        }
-                        data = f"first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=0&tos=on"
-                        logger.info(f"POST 数据: {data}")
-
-                        logger.info(f"请求URL: {url_submit}")
-                        resp_submit = session.post(url_submit, headers=header_submit, data=data,
-                                                    impersonate="chrome124", allow_redirects=False)
-
-                        logger.info(f"提交注册信息状态码: {resp_submit.status_code}")
-                        if resp_submit.status_code != 200:
-                            logger.error(f"提交注册信息失败，状态码: {resp_submit.status_code}, 响应内容: {resp_submit.text}")
-                            raise Exception(f"提交注册信息失败，状态码: {resp_submit.status_code}")
-
-                        try:
-                            content_submit = resp_submit.json()
-                            logger.info(f"提交注册信息响应: {content_submit}")
-
-                            if content_submit.get("captcha") and content_submit["captcha"][0] == "Invalid CAPTCHA":
-                                logger.warning("验证码错误，正在重新获取")
-                                time.sleep(random.uniform(0.5, 1.2))
-                                continue
-                            else:
-                                logger.info(f"邮箱 {email} 注册成功!")
-                                return
-                        except Exception as e:
-                            logger.error(f"解析 JSON 失败: {e}, 响应内容: {resp_submit.text}")
-                            raise
-
-                    except Exception as e:
-                        logger.error(f"获取验证码或提交注册信息失败: {e}")
-
-                logger.warning(f"邮箱 {email} 注册失败，尝试下一个邮箱")
                 try:
-                    os.remove("static/image.jpg")
-                except FileNotFoundError:
-                    logger.warning("验证码图片不存在，可能未成功生成")
+                    content_create_account = eval(content_create_account)
+                    captcha_0 = content_create_account["__captcha_key"]
+                    logger.info(f"提取captcha_0成功: {captcha_0}")
+                except (KeyError, SyntaxError, TypeError) as e:
+                    logger.error(f"提取captcha_0失败，content: {content_create_account}, 错误信息：{str(e)}")
+                    raise Exception(f"提取captcha_0失败：{str(e)}")
+            else:
+                logger.error(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}, 响应内容为空或错误")
+                raise Exception(f"获取 captcha_0 失败，状态码: {resp_create_account.status_code}， 响应内容为空或错误")
+
+            # 3. 构建验证码图片URL
+            captcha_url = f"https://www.serv00.com/captcha/image/{captcha_0}/"
+            logger.info(f"验证码图片URL: {captcha_url}")
+
+            header_captcha = {
+                "Host": "www.serv00.com",
+                "User-Agent": ua,
+                "Accept": "image/avif,image/webp,*/*",
+                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+                "Sec-GPC": "1",
+                "Connection": "keep-alive",
+                "Referer": "https://www.serv00.com/offer/create_new_account",
+                "Cookie": cookie,  # 使用获取的 cookie
+                "Sec-Fetch-Dest": "image",
+                "Sec-Fetch-Mode": "no-cors",
+                "Sec-Fetch-Site": "same-origin",
+                "Priority": "u=4",
+                "TE": "trailers",
+            }
+
+            for retry in range(5):
+                time.sleep(random.uniform(0.5, 1.2))
+                logger.info(f"第 {retry + 1} 次尝试获取验证码")
+                try:
+                    logger.info(f"请求验证码图片URL: {captcha_url}")
+                    resp_captcha = session.get(captcha_url, headers=header_captcha, impersonate="chrome124", allow_redirects=False)
+
+                    logger.info(f"获取验证码图片状态码: {resp_captcha.status_code}")
+                    if resp_captcha.status_code != 200:
+                        logger.error(f"获取验证码图片失败，状态码: {resp_captcha.status_code}, 响应内容: {resp_captcha.text}")
+                        raise Exception(f"获取验证码图片失败，状态码: {resp_captcha.status_code}")
+
+                    content_captcha = resp_captcha.content
+                    with open("static/image.jpg", "wb") as f:
+                        f.write(content_captcha)
+
+                    captcha_1 = ocr.classification(content_captcha).lower()
+                    logger.info(f"OCR识别结果: {captcha_1}")
+
+                    if not bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
+                        logger.warning(f"识别的验证码无效: {captcha_1}, 重试")
+                        continue
+
+                    logger.info(f"识别的验证码: {captcha_1}")
+
+                    # 4. 构建并提交表单数据
+                    url_submit = "https://www.serv00.com/offer/create_new_account.json"
+                    header_submit = {
+                        "Host": "www.serv00.com",
+                        "User-Agent": ua,
+                        "Accept": "*/*",
+                        "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Origin": "https://www.serv00.com",
+                        "Connection": "keep-alive",
+                        "Referer": "https://www.serv00.com/offer/create_new_account",
+                        "Cookie": cookie,
+                        "Sec-Fetch-Dest": "empty",
+                        "Sec-Fetch-Mode": "cors",
+                        "Sec-Fetch-Site": "same-origin",
+                        "Priority": "u=1",
+                    }
+                    data = f"first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=0&tos=on"
+                    logger.info(f"POST 数据: {data}")
+
+                    logger.info(f"请求URL: {url_submit}")
+                    resp_submit = session.post(url_submit, headers=header_submit, data=data,
+                                                impersonate="chrome124", allow_redirects=False)
+
+                    logger.info(f"提交注册信息状态码: {resp_submit.status_code}")
+                    if resp_submit.status_code != 200:
+                        logger.error(f"提交注册信息失败，状态码: {resp_submit.status_code}, 响应内容: {resp_submit.text}")
+                        raise Exception(f"提交注册信息失败，状态码: {resp_submit.status_code}")
+
+                    try:
+                        content_submit = resp_submit.json()
+                        logger.info(f"提交注册信息响应: {content_submit}")
+
+                        if content_submit.get("captcha") and content_submit["captcha"][0] == "Invalid CAPTCHA":
+                            logger.warning("验证码错误，正在重新获取")
+                            time.sleep(random.uniform(0.5, 1.2))
+                            continue
+                        else:
+                            logger.info(f"邮箱 {email} 注册成功!")
+                            return
+                    except Exception as e:
+                        logger.error(f"解析 JSON 失败: {e}, 响应内容: {resp_submit.text}")
+                        raise
+
+                except Exception as e:
+                    logger.error(f"获取验证码或提交注册信息失败: {e}")
+
+            logger.warning(f"邮箱 {email} 注册失败，尝试下一个邮箱")
+            try:
+                os.remove("static/image.jpg")
+            except FileNotFoundError:
+                logger.warning("验证码图片不存在，可能未成功生成")
 
     except Exception as e:
         logger.error(f"获取 cookie 或 captcha_0 失败: {e}")
