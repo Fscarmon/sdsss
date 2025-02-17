@@ -1,438 +1,279 @@
 import os
+import re
+import json
+import time
+import pytz
 import string
 import random
-import re
-import time
 import ddddocr
-from curl_cffi import requests
-from urllib.parse import quote, unquote
-from loguru import logger
-import threading
+import inspect
+import hashlib
+import asyncio
+import requests
 from faker import Faker
-from PIL import Image
-import io
-from queue import Queue
-import concurrent.futures
+from telegram import Bot
+from loguru import logger
+from datetime import datetime
+from urllib.parse import quote, urlparse, parse_qs, urlencode
+from fake_headers import Headers
+from requests.exceptions import JSONDecodeError
 
-# 初始化 OCR 和 Faker
-ocr = ddddocr.DdddOcr()
-fake = Faker()
-
-# 确保静态文件夹存在
 os.makedirs("static", exist_ok=True)
-
-NUM_THREADS = 50
-EMAIL_QUEUE = Queue()
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0",
-]
-
-class ProxyHandler:
-    VALID_PROTOCOLS = {'http', 'https', 'socks4', 'socks5'}
-    
-    @staticmethod
-    def format_proxy(proxy_string):
-        """格式化代理字符串，支持多种格式"""
-        if not proxy_string or not isinstance(proxy_string, str):
-            return None
-            
-        proxy_string = proxy_string.strip()
-        
-        try:
-            # 检查是否已经是标准格式（带认证）
-            pattern_with_auth = r'^(http|https|socks4|socks5)://([^:]+):([^@]+)@([^:]+):(\d+)/?$'
-            match = re.match(pattern_with_auth, proxy_string)
-            if match:
-                protocol, username, password, ip, port = match.groups()
-                if protocol.lower() in ProxyHandler.VALID_PROTOCOLS:
-                    return proxy_string
-            
-            # 检查是否已经是标准格式（不带认证）
-            pattern_without_auth = r'^(http|https|socks4|socks5)://([^:]+):(\d+)/?$'
-            match = re.match(pattern_without_auth, proxy_string)
-            if match:
-                protocol, ip, port = match.groups()
-                if protocol.lower() in ProxyHandler.VALID_PROTOCOLS:
-                    return proxy_string
-                    
-            # 处理其他格式
-            auth_part = None
-            ip_port_protocol = proxy_string
-            
-            # 分离认证信息
-            if '@' in proxy_string:
-                auth_part, ip_port_protocol = proxy_string.rsplit('@', 1)
-            
-            parts = ip_port_protocol.split(':')
-            
-            if len(parts) == 3:  # ip:port:protocol 或 username:password@ip:port:protocol
-                ip, port, protocol = parts
-                if protocol.lower() not in ProxyHandler.VALID_PROTOCOLS:
-                    protocol = 'http'
-            elif len(parts) == 2:  # ip:port
-                ip, port = parts
-                protocol = 'http'
-            else:
-                raise ValueError(f"Invalid proxy format: {proxy_string}")
-            
-            # 构建标准格式代理字符串
-            if auth_part:
-                # 处理认证信息中可能包含的特殊字符
-                if ':' not in auth_part:
-                    raise ValueError(f"Invalid auth format in proxy: {proxy_string}")
-                username, password = auth_part.split(':', 1)
-                username = quote(username)
-                password = quote(password)
-                return f"{protocol}://{username}:{password}@{ip}:{port}"
-            else:
-                return f"{protocol}://{ip}:{port}"
-                
-        except Exception as e:
-            logger.error(f"Error formatting proxy {proxy_string}: {str(e)}")
-            return None
-
-    @staticmethod
-    def test_proxy(proxy_string, test_url="https://httpbin.org/ip", timeout=10):
-        """测试单个代理是否可用"""
-        try:
-            formatted_proxy = ProxyHandler.format_proxy(proxy_string)
-            if not formatted_proxy:
-                return False
-                
-            proxies = {
-                "http": formatted_proxy,
-                "https": formatted_proxy
-            }
-            
-            with requests.Session() as session:
-                response = session.get(
-                    test_url,
-                    proxies=proxies,
-                    timeout=timeout,
-                    impersonate="chrome120"
-                )
-                response.raise_for_status()
-                
-            logger.info(f"Proxy {formatted_proxy} is working")
-            return True
-            
-        except Exception as e:
-            logger.warning(f"Proxy {proxy_string} test failed: {str(e)}")
-            return False
-
-    @staticmethod
-    def test_proxies(proxy_list, test_url="https://httpbin.org/ip", timeout=10):
-        """测试代理列表，返回可用代理列表"""
-        working_proxies = []
-        
-        for proxy in proxy_list:
-            if ProxyHandler.test_proxy(proxy, test_url, timeout):
-                formatted_proxy = ProxyHandler.format_proxy(proxy)
-                if formatted_proxy:
-                    working_proxies.append(formatted_proxy)
-                    
-        return working_proxies
-
-    @staticmethod
-    def get_random_proxy(proxy_list):
-        """从代理列表中随机选择一个代理"""
-        if not proxy_list:
-            return None
-        return random.choice(proxy_list)
-
-class Config:
-    def __init__(self):
-        self.email_domains = [domain.strip() for domain in os.environ.get("EMAIL_DOMAIN", "").split(';')]
-        self.num_emails_per_domain = 100
-        self.proxy_file = "proxy.txt"
-        self.captcha_retries = 5
-        self.request_timeout = 10
-        self.delay_range = (0.5, 1.2)
-        self.working_proxies = []
-
-def load_proxies_from_file(filename):
-    """从文件加载代理列表"""
-    try:
-        with open(filename, 'r') as f:
-            return [line.strip() for line in f if line.strip()]
-    except Exception as e:
-        logger.error(f"Error loading proxies from file {filename}: {str(e)}")
-        return []
-
-def generate_random_email_prefix(length=20):
-    """生成随机邮箱前缀"""
-    characters = string.ascii_lowercase + string.digits
-    return ''.join(random.choice(characters) for _ in range(length))
+config_file = 'static/config.json'
 
 def get_user_name():
-    """获取随机用户名"""
-    names = []
-    for _ in range(5):
-        try:
-            name = fake.name()
-            first_name = name.split(" ")[0]
-            last_name = name.split(" ")[-1]
-            names.append({"name": first_name, "surname": last_name})
-        except Exception as e:
-            logger.error(f"生成随机姓名失败: {e}")
-            first_name = random.choice(["Alice", "Bob"])
-            last_name = random.choice(["Smith", "Jones"])
-            names.append({"name": first_name, "surname": last_name})
-    return names
+    url = "https://www.ivtool.com/random-name-generater/uinames/api/index.php?region=united%20states&gender=male&amount=5&="
+    resp = requests.get(url, verify=False)
+    if resp.status_code != 200:
+        print(resp.status_code, resp.text)
+        raise Exception("获取名字出错")
+    data = resp.json()
+    return data
 
 def generate_random_username():
-    """生成随机用户名"""
     length = random.randint(7, 10)
     characters = string.ascii_letters
     random_string = ''.join(random.choice(characters) for _ in range(length))
     return random_string
 
-def load_proxies(config):
-    """加载并测试代理"""
-    proxies = []
-    
-    # 从环境变量加载
-    socks_env = os.environ.get("SOCKS", "")
-    if socks_env:
-        proxies.extend(socks_env.split(";"))
-    
-    # 从文件加载
-    file_proxies = load_proxies_from_file(config.proxy_file)
-    proxies.extend(file_proxies)
-    
-    # 测试并保存可用代理
-    config.working_proxies = ProxyHandler.test_proxies(proxies)
-    logger.info(f"Found {len(config.working_proxies)} working proxies")
+def generate_random_email(domain):
+    length = random.randint(7, 10)
+    characters = string.ascii_lowercase + string.digits
+    username = ''.join(random.choice(characters) for _ in range(length))
+    return f"{username}@{domain}"
 
-def register_email(email, ua, config, proxy=None):  # 添加 config 参数
-    """注册邮箱的主要逻辑"""
+def generate_random_headers():
+    return {
+        "Accept-Language": random.choice(["en-US,en;q=0.9", "ja-JP,ja;q=0.9", "fr-FR,fr;q=0.9", "de-DE,de;q=0.9", "es-ES,es;q=0.9"]),
+        "User-Agent": Headers(os="random").generate()["User-Agent"],
+        "X-Forwarded-For": Faker().ipv4(),
+        "X-Network-Type": random.choice(["Wi-Fi", "4G", "5G"]),
+        "X-Timezone": random.choice(pytz.all_timezones)
+    }
+
+def generate_random_data():
+    screen_resolution = f"{random.choice([1280, 1366, 1440, 1600, 1920])}x{random.choice([720, 768, 900, 1080, 1200])}"
+    fonts = ["Arial", "Times New Roman", "Verdana", "Helvetica", "Georgia", "Courier New"]
+    webgl_info = {
+        "vendor": random.choice(["Google Inc. (NVIDIA)", "Intel Inc.", "AMD Inc."]),
+        "renderer": random.choice([
+            "ANGLE (NVIDIA, NVIDIA GeForce GTX 1080 Direct3D11 vs_5_0 ps_5_0, D3D11)", "Intel(R) HD Graphics 630",
+            "AMD Radeon RX 580", "NVIDIA GeForce RTX 3090", "Intel(R) Iris Plus Graphics 655",
+            "AMD Radeon RX 5700 XT", "NVIDIA GeForce GTX 1660 Ti",
+            "Intel(R) UHD Graphics 630 (Coffeelake)", "AMD Radeon RX 5600 XT",
+            "NVIDIA Quadro RTX 8000", "Intel(R) HD Graphics 520",
+            "AMD Radeon RX 480", "NVIDIA GeForce GTX 1050 Ti", "Intel(R) UHD Graphics 620", "NVIDIA GeForce RTX 3080", "AMD Radeon Vega 64",
+            "NVIDIA Titan V", "AMD Radeon RX 6800 XT", "NVIDIA GeForce GTX 980 Ti", "Intel(R) Iris Xe Graphics"
+        ])
+    }
+    return {
+        "screen_resolution": screen_resolution,
+        "color_depth": random.choice([16, 24, 32]),
+        "fonts": random.sample(fonts, k=random.randint(3, len(fonts))),
+        "webgl_info": webgl_info,
+        "canvas_fingerprint": hashlib.md5(os.urandom(16)).hexdigest(),
+        "plugins": random.sample(["Chrome PDF Viewer", "Google Docs Offline", "AdBlock", "Grammarly", "LastPass"], k=random.randint(2, 5))
+    }
+
+async def send_message(message, tg_token, tg_chat_id):
     try:
-        with requests.Session() as session:
-            if proxy:
-                session.proxies = {"http": proxy, "https": proxy}
-                logger.info(f"Using proxy: {proxy}")
-
-            header_base = {
-                "User-Agent": ua,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q;0.2",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Priority": "u=1",
-            }
-
-            # 获取基础页面和Cookie
-            url_base = "https://www.serv00.com"
-            logger.info(f"Requesting base URL: {url_base}")
-            try:
-                resp_base = session.get(url_base, headers=header_base, impersonate="chrome124", timeout=config.request_timeout)
-                resp_base.raise_for_status()
-            except requests.errors.RequestsError as e:
-                logger.error(f"Failed to get base page: {e}")
-                return
-
-            logger.info(f"Base page status code: {resp_base.status_code}")
-            cookie = resp_base.headers.get("set-cookie")
-            logger.info(f"Cookie: {cookie}")
-
-            if not cookie:
-                logger.warning("No cookie received.")
-                return
-
-            # 获取用户信息
-            try:
-                usernames = get_user_name()
-            except Exception as e:
-                logger.error(f"Failed to get user name: {e}")
-                return
-
-            _ = usernames.pop()
-            first_name = _["name"]
-            last_name = _["surname"]
-            username = generate_random_username().lower()
-            logger.info(f"{email} {first_name} {last_name} {username}")
-
-            # 创建账号
-            url_create_account = "https://www.serv00.com/offer/create_new_account.json"
-            header_create_account = {
-                "Host": "www.serv00.com",
-                "User-Agent": ua,
-                "Accept": "*/*",
-                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q;0.2",
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "X-Requested-With": "XMLHttpRequest",
-                "Origin": "https://www.serv00.com",
-                "Connection": "keep-alive",
-                "Referer": "https://www.serv00.com/offer/create_new_account",
-                "Cookie": cookie,
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
-                "Pragma": "no-cache",
-                "Cache-Control": "no-cache",
-            }
-
-            try:
-                resp_create_account = session.get(
-                    url_create_account, 
-                    headers=header_create_account,
-                    impersonate="chrome124", 
-                    timeout=config.request_timeout
-                )
-                resp_create_account.raise_for_status()
-            except requests.errors.RequestsError as e:
-                logger.error(f"Failed to get captcha_0: {e}")
-                return
-
-            logger.info(f"captcha_0 status code: {resp_create_account.status_code}")
-            content_create_account = resp_create_account.text
-
-            try:
-                content_create_account = eval(content_create_account)
-                captcha_0 = content_create_account["__captcha_key"]
-                logger.info(f"Extracted captcha_0: {captcha_0}")
-            except (KeyError, SyntaxError, TypeError) as e:
-                logger.error(f"Failed to extract captcha_0, content: {content_create_account}, error: {str(e)}")
-                raise Exception(f"Failed to extract captcha_0: {str(e)}")
-
-            # 处理验证码
-            captcha_url = f"https://www.serv00.com/captcha/image/{captcha_0}/"
-            logger.info(f"Captcha image URL: {captcha_url}")
-            image_headers = header_create_account
-
-            for retry in range(config.captcha_retries):
-                time.sleep(random.uniform(*config.delay_range))
-                logger.info(f"Attempt {retry + 1} to get captcha")
-                try:
-                    logger.info(f"Requesting captcha image URL: {captcha_url}")
-                    resp_captcha = session.get(
-                        captcha_url, 
-                        headers=image_headers, 
-                        impersonate="chrome124", 
-                        timeout=config.request_timeout
-                    )
-                    resp_captcha.raise_for_status()
-                    content_captcha = resp_captcha.content
-
-                    # 保存验证码图片
-                    image_stream = io.BytesIO(content_captcha)
-                    try:
-                        img = Image.open(image_stream)
-                        img.save("static/image.jpg")
-                    except Exception as e:
-                        logger.error(f"Failed to save image: {e}")
-                        continue
-
-                    # OCR识别验证码
-                    captcha_1 = ocr.classification(content_captcha).lower()
-                    logger.info(f"OCR result: {captcha_1}")
-
-                    if not bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
-                        logger.warning(f"Invalid captcha: {captcha_1}, retrying")
-                        continue
-
-                    logger.info(f"Captcha: {captcha_1}")
-
-                   # 提交注册
-                    url_submit = "https://www.serv00.com/offer/create_new_account.json"
-                    submit_headers = header_create_account
-                    data = f"first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=0&tos=on"
-                    logger.info(f"POST data: {data}")
-
-                    logger.info(f"Requesting URL: {url_submit}")
-                    resp_submit = session.post(
-                        url_submit,
-                        headers=submit_headers,
-                        data=data,
-                        impersonate="chrome124",
-                        timeout=config.request_timeout
-                    )
-                    resp_submit.raise_for_status()
-                    logger.info(f"Submit status code: {resp_submit.status_code}")
-
-                    content_submit = resp_submit.json()
-                    logger.info(f"Submit response: {content_submit}")
-
-                    if content_submit.get("captcha") and content_submit["captcha"][0] == "Invalid CAPTCHA":
-                        logger.warning("Invalid captcha, retrying")
-                        time.sleep(random.uniform(*config.delay_range))
-                        continue
-                    else:
-                        logger.info(f"Email {email} registered successfully!")
-                        return
-
-                except Exception as e:
-                    logger.error(f"Failed to get captcha or submit registration: {e}")
-                finally:
-                    if os.path.exists("static/image.jpg"):
-                        os.remove("static/image.jpg")
-                    else:
-                        logger.warning("Image static/image.jpg not found, cannot delete")
-
-            logger.warning(f"Failed to register email {email}, trying next email")
-
+        bot = Bot(token=tg_token)
+        await bot.send_message(chat_id=tg_chat_id, text=message)
     except Exception as e:
-        logger.error(f"Failed to get cookie or captcha_0: {e}")
-        return
+        logger.error(f"发送失败: {e}")
 
-def worker(config):
-    """工作线程函数"""
-    while True:
-        email = EMAIL_QUEUE.get()
-        if email is None:
-            break
 
-        ua = random.choice(USER_AGENTS)
-        proxy = ProxyHandler.get_random_proxy(config.working_proxies)
-        logger.info(f"Thread {threading.current_thread().name} using User-Agent: {ua}, email: {email}, proxy: {proxy}")
+def parse_socks_string(socks_str):
+    if socks_str.startswith("https://t.me/socks?"):
+        parsed_url = urlparse(socks_str)
+        query_params = parse_qs(parsed_url.query)
+        server = query_params.get('server', [''])[0]
+        port = query_params.get('port', [''])[0]
+        user = query_params.get('user', [''])[0]
+        password = query_params.get('pass', [''])[0]
+        if server and port and user and password:
+           return f"socks5://{user}:{password}@{server}:{port}"
+    return socks_str
 
+
+def start_task(email_domains, num_emails):
+    max_captcha_retries = int(os.environ.get("MAX_CAPTCHA_RETRIES", 5))
+    max_email_retries = int(os.environ.get("MAX_EMAIL_RETRIES", 10))
+    tg_env = os.environ.get("TG", "")
+    tg_token = None
+    tg_chat_id = None
+    if tg_env:
         try:
-            register_email(email, ua, config, proxy)  # 传入 config 参数
-        except Exception as e:
-            logger.error(f"Thread {threading.current_thread().name} failed to register email {email}: {e}")
-        finally:
-            EMAIL_QUEUE.task_done()
-def main():
-    """主函数"""
-    # 初始化配置
-    config = Config()
-    logger.info(f"Using email suffixes: {config.email_domains}")
+            tg_token, tg_chat_id = tg_env.split(";")
+        except ValueError:
+            logger.error("TG环境变量格式错误，请使用'token;chat_id'格式")
 
-    # 加载并测试代理
-    load_proxies(config)
-    logger.info(f"Using Proxies: {config.working_proxies}")
+    socks_env = os.environ.get("SOCKS", "")
+    socks_proxies = None
+    if socks_env:
+        socks_str = parse_socks_string(socks_env)
+        try:
+            if socks_str.startswith("socks5://"):
+                 socks_proxies = {
+                    "http": socks_str,
+                    "https": socks_str
+                 }
+            elif socks_str.startswith("https://"):
+                 # Use regex to extract user, password, host and port
+                match = re.match(r'https://(?:([^:]+):([^@]+)@)?([^:]+):(\d+)', socks_str)
+                if match:
+                   user, password, host, port = match.groups()
+                   if user and password:
+                       socks_proxies = {
+                        "http": f"https://{user}:{password}@{host}:{port}",
+                        "https": f"https://{user}:{password}@{host}:{port}"
+                         }
+                   else:
+                      socks_proxies = {
+                        "http": f"https://{host}:{port}",
+                        "https": f"https://{host}:{port}"
+                       }
+                else:
+                    socks_proxies = {
+                        "http": socks_str,
+                        "https": socks_str
+                   }
+            else:
+                logger.warning("SOCKS 环境变量格式不正确，请检查")
+        except ValueError as e:
+             logger.error(f"SOCKS 环境变量格式错误: {e}")
+    else:
+        logger.info("SOCKS 环境变量未设置，将不使用代理")
 
-    # 生成邮箱队列
-    for email_domain in config.email_domains:
-        for _ in range(config.num_emails_per_domain):
-            email_prefix = generate_random_email_prefix()
-            email = f"{email_prefix}@{email_domain}"
-            EMAIL_QUEUE.put(email)
+    for domain in email_domains:
+        for _ in range(num_emails):
+            id_retry = 1
+            email = generate_random_email(domain)
+            email_retry_count = 0
+            while email_retry_count < max_email_retries:
+                try:
+                    random_headers = generate_random_headers()
+                    random_data = generate_random_data()
+                    User_Agent = random_headers["User-Agent"]
+                    Cookie = "csrftoken={}"
+                    url1 = "https://www.serv00.com/offer/create_new_account"
+                    headers = {"User-Agent": User_Agent, **random_headers}
+                    captcha_url = "https://www.serv00.com/captcha/image/{}/"
+                    header2 = {"Cookie": Cookie, "User-Agent": User_Agent, **random_headers}
+                    url3 = "https://www.serv00.com/offer/create_new_account.json"
+                    header3 = {
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "Referer": "https://www.serv00.com/offer/create_new_account",
+                        "Cookie": Cookie,
+                        "User-Agent": User_Agent,
+                        **random_headers
+                    }
 
-    # 使用线程池处理注册任务
-    with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_THREADS) as executor:
-        for _ in range(NUM_THREADS):
-            executor.submit(worker, config)
+                    usernames = get_user_name()
+                    _ = usernames.pop()
+                    first_name = _["name"]
+                    last_name = _["surname"]
+                    username = generate_random_username().lower()
+                    print(""), logger.info(f"{email} {first_name} {last_name} {username}")
+                    with requests.Session() as session:
+                        if socks_proxies:
+                            session.proxies = socks_proxies
+                            logger.info(f"使用代理: {socks_proxies['http']}")
+                        logger.info(f"获取网页信息 - 尝试次数: \033[1;94m{id_retry}\033[0m.")
+                        resp = session.get(url=url1, headers=headers, verify=False)
+                        headers = resp.headers
+                        content = resp.text
+                        csrftoken = re.findall(r"csrftoken=(\w+);", headers.get("set-cookie"))[0]
+                        header2["Cookie"] = header2["Cookie"].format(csrftoken)
+                        header3["Cookie"] = header3["Cookie"].format(csrftoken)
+                        captcha_0 = re.findall(r'id=\"id_captcha_0\" name=\"captcha_0\" value=\"(\w+)\">', content)[0]
+                        captcha_retry = 1
+                        while True:
+                            time.sleep(random.uniform(0.5, 1.2))
+                            logger.info("获取验证码")
+                            resp = session.get(url=captcha_url.format(captcha_0), headers=dict(header2, **{"Cookie": header2["Cookie"].format(csrftoken)}), verify=False); time.sleep(random.uniform(3, 10))
+                            content = resp.content
+                            with open("static/image.jpg", "wb") as f:
+                                f.write(content)
+                            captcha_1 = ddddocr.DdddOcr(show_ad=False).classification(content).upper()
+                            if bool(re.match(r'^[a-zA-Z0-9]{4}$', captcha_1)):
+                                logger.info(f"识别验证码成功: \033[1;92m{captcha_1}\033[0m")
+                                break
+                            else:
+                                logger.warning("\033[7m验证码识别失败,正在重试...\033[0m")
+                                captcha_retry += 1
+                                if captcha_retry > max_captcha_retries:
+                                    logger.error(f"验证码识别失败次数过多({max_captcha_retries}), 正在跳过该邮箱.")
+                                    break  # 跳出验证码重试循环
+                                continue
+                        if captcha_retry > max_captcha_retries:
+                            email_retry_count += 1
+                            logger.info(f"邮箱 {email} 验证码重试次数({max_captcha_retries})已达上限, 准备重新开始注册尝试.")
+                            continue  # 跳过本次注册，重新开始尝试
+                        data = f"csrfmiddlewaretoken={csrftoken}&first_name={first_name}&last_name={last_name}&username={username}&email={quote(email)}&captcha_0={captcha_0}&captcha_1={captcha_1}&question=free&tos=on{urlencode(random_data)}"
+                        time.sleep(random.uniform(0.5, 1.2))
+                        logger.info("请求信息")
+                        resp = session.post(url=url3, headers=dict(header3, **{"Cookie": header3["Cookie"].format(csrftoken)}), data=data, verify=False)
+                        logger.info(f'请求状态码: \033[1;93m{resp.status_code}\033[0m')
+                        try:
+                            content = resp.json()
+                            if resp.status_code == 200 and len(content.keys()) == 2:
+                                logger.success(f"\033[1;92m🎉 账户 {username} 已成功创建!\033[0m")
+                                if tg_token and tg_chat_id:
+                                   asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}", tg_token,
+                                                           tg_chat_id))
+                                break  # 成功注册跳出循环，并跳出全局邮箱重试循环
+                            else:
+                                first_key = next(key for key in content if key not in ['__captcha_key', '__captcha_image_src'])
+                                first_content = re.search(r"\['(.+?)'\]", str(content[first_key])).group(1)
+                                logger.info(f"\033[36m{first_key.capitalize()}: {first_content}\033[0m")
+                                if first_content == "An account has already been registered to this e-mail address.":
+                                   logger.warning(f"\033[1;92m该邮箱已存在,或账户 {username} 已成功创建🎉!")
+                                   if tg_token and tg_chat_id:
+                                       asyncio.run(send_message(f"Success!\nEmail: {email}\nUserName: {username}", tg_token,
+                                                                 tg_chat_id))
+                                   break
+                        except JSONDecodeError:
+                            logger.error("\033[7m获取信息错误,正在重试...\033[0m")
+                            time.sleep(random.uniform(0.5, 1.2))
+                            continue
+                        if content.get("captcha") and content["captcha"][0] == "Invalid CAPTCHA":
+                            captcha_0 = content["__captcha_key"]
+                            logger.warning("\033[7m验证码错误,正在重新获取...\033[0m")
+                            time.sleep(random.uniform(0.5, 1.2))
+                            continue
+                        if content.get("username") and content["username"][0] == "Maintenance time. Try again later.":
+                            email_retry_count += 1
+                            logger.error("\033[7m系统维护中,正在重试...\033[0m")
+                            time.sleep(random.uniform(0.5, 1.2))
+                            break
+                        if content.get("email") and content["email"][0] == "Enter a valid email address.":
+                            logger.error("\033[7m无效的邮箱,请重新输入.\033[0m")
+                            time.sleep(random.uniform(0.5, 1.2))
+                            return
+                        else:
+                            email_retry_count += 1
+                            continue
+                except Exception as e:
+                    logger.error(f"\033[7m发生异常:{e},正在重新开始任务...\033[0m")
+                    time.sleep(random.uniform(0.5, 1.2))
+                    email_retry_count += 1
+                if email_retry_count >= max_email_retries:
+                    logger.error(f"邮箱 {email} 尝试注册次数过多({max_email_retries}), 正在跳过该邮箱.")
+                    continue  # 跳过此邮箱继续下一个
 
-    # 等待所有任务完成
-    EMAIL_QUEUE.join()
-    logger.info("All threads completed, exiting")
+if __name__ == "__main__":
+    os.system("cls" if os.name == "nt" else "clear")
+    resp = requests.get("https://www.serv00.com/", verify=False)
+    response = requests.get('https://ping0.cc/geo', verify=False)
+    print(f"=============================\n\033[96m{response.text[:200]}\033[0m=============================")
+    match = re.search(r'(\d+)\s*/\s*(\d+)', resp.text).group(0).replace(' ', '') if resp.status_code == 200 and re.search(r'(\d+)\s*/\s*(\d+)', resp.text) else (logger.error('请求失败,请检查代理IP是否封禁!'), exit())
+    logger.info(f"\033[1;5;32m当前注册量:{match}\033[0m")
 
-if __name__ == '__main__':
-    # 配置日志记录
-    logger.add(
-        "registration_{time}.log",
-        rotation="1 day",
-        retention="7 days",
-        level="DEBUG",
-        encoding="utf-8"
-    )
-    main()
+    # 读取环境变量
+    email_domains_str = os.environ.get("EMAIL_DOMAIN", "")
+    email_domains = [domain.strip() for domain in email_domains_str.split(';')]
+
+    num_emails = int(os.environ.get("NUM_EMAILS", 10))
+
+    start_task(email_domains, num_emails)
