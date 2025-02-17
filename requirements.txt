@@ -1,11 +1,8 @@
-ddddocr
-fastapi
-uvicorn
+pytz
+Faker
 loguru
-curl_cffi
-python-multipart
-brotli
-zstandard
-faker
-opencv-python
+ddddocr
+requests
+fake_headers
+python-telegram-bot
 PySocks
